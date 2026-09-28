@@ -576,7 +576,7 @@ func die() -> void:
 	forward = forward.normalized()
 	scare_staging_position = player.global_position + forward * 2.1
 	scare_staging_position.y = player.global_position.y
-	scare_impact_position = player.global_position + forward * 0.58
+	scare_impact_position = player.global_position + forward * 1.05
 	scare_impact_position.y = player.global_position.y
 	creature.global_position = scare_staging_position
 	var toward_camera: Vector3 = player.camera.global_position - scare_staging_position
@@ -585,7 +585,8 @@ func die() -> void:
 	creature.model.root.scale = Vector3.ONE * 1.08
 	for arm in creature.model.arms:
 		arm.rotation.z = signf(arm.position.x) * 0.30
-	player.camera.look_at(creature.global_position + Vector3(0, 2.15, 0))
+	player.camera.look_at(creature.model.head.global_position)
+	player.camera.rotation.z = 0.0
 	scare_flash.visible = not bool(progress.settings.reduced_effects)
 	scare_flash.color = Color(1.0, 0.90, 0.78, 0.72)
 	audio.play("scream", -4, randf_range(0.96, 1.04))
@@ -602,14 +603,14 @@ func _update_death(delta: float) -> void:
 		creature.model.root.rotation.x = sin(transition_time * 24.0) * 0.045 * (1.0 - lunge)
 		for arm in creature.model.arms:
 			arm.rotation.z = signf(arm.position.x) * lerpf(0.30, 0.52, lunge)
-		player.camera.look_at(creature.global_position + Vector3(0, 2.15, 0))
+		player.camera.look_at(creature.model.head.global_position)
 		if not bool(progress.settings.reduced_effects):
 			var camera_kick: float = sin(transition_time * 48.0) * 0.024 * exp(-transition_time * 1.7)
 			player.camera.rotation.z = camera_kick
+		else:
+			player.camera.rotation.z = 0.0
 	if scare_flash.visible:
-		var flash_alpha := 0.20 * exp(-transition_time * 5.0)
-		if transition_time < 0.055:
-			flash_alpha = 0.72 * (1.0 - transition_time / 0.055)
+		var flash_alpha := 0.72 * exp(-transition_time * 7.5)
 		scare_flash.color = Color(1.0, 0.90, 0.78, flash_alpha)
 	post.set_shader_parameter("fade", clampf((transition_time - 0.6) / 1.6, 0, 0.94))
 	if transition_time > 2.2:

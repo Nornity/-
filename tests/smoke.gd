@@ -211,21 +211,42 @@ func run(app) -> Dictionary:
 	await frames(app, 3)
 	check(creature.position == enemy_position and not creature.active, "Pause also freezes the enemy")
 	app.resume_game()
+	var original_reduced_effects: bool = bool(app.progress.settings.reduced_effects)
+	app.progress.settings.reduced_effects = false
+	app.player.settings = app.progress.settings
 	app.die()
 	check(app.state == "dying" and not app.player.active, "Capture disables player input")
 	check(app.audio.streams.has("scream"), "Capture has its own short, original scream sting")
 	var full_effects: bool = not bool(app.progress.settings.reduced_effects)
 	check(app.scare_flash.visible == full_effects, "Capture uses one optional impact flash")
+	var face_direction: Vector3 = (app.creature.model.head.global_position - app.player.camera.global_position).normalized()
+	check((-app.player.camera.global_basis.z).dot(face_direction) > 0.999, "Capture camera locks onto the creature's face")
+	var impact_gap: float = Vector2(
+		app.scare_impact_position.x - app.player.camera.global_position.x,
+		app.scare_impact_position.z - app.player.camera.global_position.z
+	).length()
+	check(impact_gap >= 1.0, "The lunge stops close without clipping through the camera")
 	var initial_lunge_distance: float = app.scare_staging_position.distance_to(app.scare_impact_position)
 	app._update_death(0.2)
 	var remaining_lunge_distance: float = app.creature.global_position.distance_to(app.scare_impact_position)
 	check(remaining_lunge_distance < initial_lunge_distance, "Caught creature lunges into the camera")
 	check(app.creature.model.root.scale.x > 1.08, "Capture enlarges the creature during impact")
+	check(not is_zero_approx(app.player.camera.rotation.z), "Full effects add a brief camera jolt")
 	app._update_death(2.1)
 	check(app.state == "result" and not app.scare_flash.visible, "Capture fades to a retry result screen")
 	app.start_run(1, 0, 901)
 	await frames(app, 2)
 	check(app.fuses == 0 and app.player.loaded_count() == 2 and app.elapsed < 1, "Retry resets inventory, objective and session state")
+	app.progress.settings.reduced_effects = true
+	app.player.settings = app.progress.settings
+	app.die()
+	check(app.state == "dying" and not app.scare_flash.visible, "Reduced effects keep the scare but suppress its flash")
+	app._update_death(0.2)
+	check(is_zero_approx(app.player.camera.rotation.z), "Reduced effects suppress camera shake")
+	app._update_death(2.1)
+	app.progress.settings.reduced_effects = original_reduced_effects
+	app.start_run(1, 0, 901)
+	await frames(app, 2)
 	# Progression is awarded only on completion.
 	app.fuses = int(app.config.fuses)
 	app.elapsed = 93
