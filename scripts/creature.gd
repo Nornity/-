@@ -121,14 +121,16 @@ func _physics_process(delta: float) -> void:
 		path_timer = 0.45 if state == "chase" else 0.9
 		_repath()
 	var aim := global_position
-	if not path.is_empty():
-		aim = Maze.to_world(path[0])
-		if Vector2(aim.x - global_position.x, aim.z - global_position.z).length() < 0.13:
+	if _can_steer_to_memory():
+		# Keep the last seen position in world space. Chasing a cell center makes
+		# the creature orbit a player standing on a four-way junction.
+		aim = last_known
+	elif not path.is_empty():
+		aim = _visible_path_waypoint()
+		if Vector2(aim.x - global_position.x, aim.z - global_position.z).length() < 0.34:
 			path.pop_front()
 			if not path.is_empty():
-				aim = Maze.to_world(path[0])
-	elif state == "chase" and Maze.to_cell(global_position) == target:
-		aim = last_known
+				aim = _visible_path_waypoint()
 	elif global_position.distance_to(Maze.to_world(target)) < 0.65:
 		if state == "patrol":
 			_new_patrol_target()
@@ -160,8 +162,8 @@ func _physics_process(delta: float) -> void:
 		stuck_time += delta
 		if stuck_time > 0.8:
 			stuck_time = 0
+			path_timer = 0.0
 			_repath()
-			path.push_front(Maze.to_cell(global_position))
 	else:
 		stuck_time = 0
 	gait += travelled * 3.4
@@ -199,12 +201,36 @@ func _sense_player() -> void:
 		memory = 3.6
 		_change_state("chase")
 
+func _can_steer_to_memory() -> bool:
+	if state != "chase" and state != "investigate":
+		return false
+	var eye := Vector3(0, 0.9, 0)
+	return world.line_of_sight(global_position + eye, last_known + eye)
+
+func navigation_aim() -> Vector3:
+	if _can_steer_to_memory():
+		return last_known
+	if path.is_empty():
+		return Maze.to_world(target)
+	return _visible_path_waypoint()
+
+func _visible_path_waypoint() -> Vector3:
+	if path.is_empty():
+		return Maze.to_world(target)
+	var eye := Vector3(0, 0.9, 0)
+	var origin: Vector3 = global_position + eye
+	var furthest_visible := 0
+	for i in range(mini(path.size(), 10)):
+		var point: Vector3 = Maze.to_world(path[i]) + eye
+		if not world.line_of_sight(origin, point):
+			break
+		furthest_visible = i
+	for i in range(furthest_visible):
+		path.pop_front()
+	return Maze.to_world(path[0])
+
 func _repath() -> void:
-	var current: Vector2i = Maze.to_cell(global_position)
-	var keep_center: bool = not path.is_empty() and path[0] == current
-	path = world.maze.find_path(current, target)
-	if keep_center:
-		path.push_front(current)
+	path = world.maze.find_path(Maze.to_cell(global_position), target)
 
 func _new_patrol_target() -> void:
 	var cells: Array[Vector2i] = world.maze.floor_cells

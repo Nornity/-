@@ -140,6 +140,7 @@ func run(app) -> Dictionary:
 	creature._sense_player()
 	check(creature.state == "patrol", "Blind creature does not see a stationary lit player")
 	check(is_equal_approx(creature.hearing_multiplier(), 1.35), "Blind creature gets a strong, explicit hearing profile")
+	await _test_junction_approach(app, creature)
 	var far_cell := Vector2i.ZERO
 	for candidate in app.world.maze.floor_cells:
 		var corridor_steps: int = app.world.maze.find_path(center, candidate).size()
@@ -212,8 +213,16 @@ func run(app) -> Dictionary:
 	app.resume_game()
 	app.die()
 	check(app.state == "dying" and not app.player.active, "Capture disables player input")
-	app._update_death(2.3)
-	check(app.state == "result", "Capture has a retry result screen")
+	check(app.audio.streams.has("scream"), "Capture has its own short, original scream sting")
+	var full_effects: bool = not bool(app.progress.settings.reduced_effects)
+	check(app.scare_flash.visible == full_effects, "Capture uses one optional impact flash")
+	var initial_lunge_distance: float = app.scare_staging_position.distance_to(app.scare_impact_position)
+	app._update_death(0.2)
+	var remaining_lunge_distance: float = app.creature.global_position.distance_to(app.scare_impact_position)
+	check(remaining_lunge_distance < initial_lunge_distance, "Caught creature lunges into the camera")
+	check(app.creature.model.root.scale.x > 1.08, "Capture enlarges the creature during impact")
+	app._update_death(2.1)
+	check(app.state == "result" and not app.scare_flash.visible, "Capture fades to a retry result screen")
 	app.start_run(1, 0, 901)
 	await frames(app, 2)
 	check(app.fuses == 0 and app.player.loaded_count() == 2 and app.elapsed < 1, "Retry resets inventory, objective and session state")
@@ -310,6 +319,67 @@ func _test_mazes() -> void:
 		maze.generate(cfg, 707)
 		check(maze.fuse_cells.size() == int(cfg.fuses), "Endless floors remain playable as difficulty grows")
 		check(maze.width <= 29 and float(cfg.chase) < 4.65, "Endless difficulty has fair bounds")
+
+func _test_junction_approach(app, creature) -> void:
+	var intersection_cell := Vector2i.ZERO
+	var found := false
+	for y in range(1, app.world.maze.width - 2):
+		for x in range(1, app.world.maze.width - 2):
+			var cell := Vector2i(x, y)
+			var junction_is_open: bool = (
+				app.world.maze.is_open(cell)
+				and app.world.maze.is_open(cell + Vector2i.RIGHT)
+				and app.world.maze.is_open(cell + Vector2i.DOWN)
+				and app.world.maze.is_open(cell + Vector2i(1, 1))
+			)
+			if junction_is_open:
+				intersection_cell = cell
+				found = true
+				break
+		if found:
+			break
+	check(found, "Navigation test finds a clear four-cell junction")
+	if not found:
+		return
+	var saved_player_position: Vector3 = app.player.global_position
+	var saved_enemy_position: Vector3 = creature.global_position
+	var saved_state: String = creature.state
+	var saved_target: Vector2i = creature.target
+	var saved_memory: Vector3 = creature.last_known
+	var saved_memory_time: float = creature.memory
+	var saved_sense_timer: float = creature.sense_timer
+	var saved_path_timer: float = creature.path_timer
+	var saved_velocity: Vector3 = creature.velocity
+	var saved_path: Array[Vector2i] = []
+	for step in creature.path:
+		saved_path.append(step)
+	var junction_x: float = float(intersection_cell.x + 1) * Maze.CELL_SIZE
+	var junction_z: float = float(intersection_cell.y + 1) * Maze.CELL_SIZE
+	var junction := Vector3(junction_x, 0.03, junction_z)
+	creature.global_position = Maze.to_world(intersection_cell, 0.03)
+	app.player.global_position = junction
+	creature.last_known = junction
+	creature.target = Maze.to_cell(junction)
+	creature.state = "chase"
+	creature.memory = 3.6
+	creature.path_timer = 0.0
+	creature.path.clear()
+	check(creature._can_steer_to_memory(), "A visible four-way target bypasses cell-center steering")
+	check(creature.navigation_aim().is_equal_approx(junction), "Pursuit aims at the player's sub-cell junction position")
+	var distance_before: float = creature.global_position.distance_to(junction)
+	await frames(app, 10)
+	var distance_after: float = creature.global_position.distance_to(junction)
+	check(distance_after < distance_before - 0.25, "Creature closes smoothly on a player at the junction")
+	app.player.global_position = saved_player_position
+	creature.global_position = saved_enemy_position
+	creature.state = saved_state
+	creature.target = saved_target
+	creature.last_known = saved_memory
+	creature.memory = saved_memory_time
+	creature.sense_timer = saved_sense_timer
+	creature.path_timer = saved_path_timer
+	creature.velocity = saved_velocity
+	creature.path = saved_path
 
 func _test_touch(app) -> void:
 	var controls = app.ui.touch

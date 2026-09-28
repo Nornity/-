@@ -10,7 +10,7 @@ var spatial_voices: Array[AudioStreamPlayer3D] = []
 var next_spatial: int = 0
 
 func _ready() -> void:
-	for name in ["ambient", "step", "click", "pickup", "taser", "rock", "growl", "heartbeat", "breath", "door", "caught", "break", "power"]:
+	for name in ["ambient", "step", "click", "pickup", "taser", "rock", "growl", "heartbeat", "breath", "door", "caught", "break", "power", "scream"]:
 		streams[name] = AudioStreamWAV.load_from_file("res://assets/audio/%s.wav" % name)
 	streams.ambient.loop_mode = AudioStreamWAV.LOOP_FORWARD
 	streams.ambient.loop_end = int(streams.ambient.get_length() * streams.ambient.mix_rate)

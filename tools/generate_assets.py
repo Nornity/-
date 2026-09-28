@@ -143,9 +143,22 @@ def sounds():
     t = time(1.8)
     note = np.where(t<.4, 261.63, np.where(t<.8, 329.63, 392))
     write_sound("power", np.sin(2*np.pi*note*t)*.16*np.sin(np.pi*t/1.8)**2)
+    # A short, original descending shriek layered over a chesty impact for the
+    # capture sting. It is intentionally brief, with no looping or harsh peak.
+    t = time(1.05)
+    frequency = 1040 - 590 * (1 - np.exp(-t * 3.4))
+    phase = 2 * np.pi * np.cumsum(frequency) / RATE
+    vibrato = np.sin(2 * np.pi * (5.5 * t + 1.1 * t * t)) * 0.075
+    envelope = np.minimum(1.0, t * 95) * np.exp(-np.maximum(0, t - 0.20) * 2.2)
+    shriek = .43 * np.sin(phase + vibrato)
+    shriek += .19 * np.sin(phase * 2.01 + .4)
+    shriek += noise(len(t), 3) * .16
+    impact = np.sin(2 * np.pi * (74 * t - 21 * t * t)) * np.exp(-t * 19) * .38
+    impact += noise(len(t), 2) * np.exp(-t * 48) * .32
+    write_sound("scream", shriek * envelope + impact)
 
 
 if __name__ == "__main__":
     textures()
     sounds()
-    print("Generated original textures and 13 sound effects in assets/.")
+    print("Generated original textures and 14 sound effects in assets/.")

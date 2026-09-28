@@ -52,6 +52,10 @@ var environment: Environment
 var diorama
 var menu_camera: Camera3D
 var post: ShaderMaterial
+var scare_flash: ColorRect
+var scare_staging_position := Vector3.ZERO
+var scare_impact_position := Vector3.ZERO
+var scare_heading: float = 0.0
 var fuses: int = 0
 var elapsed: float = 0.0
 var endless_floor: int = 0
@@ -135,6 +139,16 @@ func _build_postprocess() -> void:
 	post.shader = load("res://shaders/retro.gdshader")
 	screen.material = post
 	layer.add_child(screen)
+	var scare_layer := CanvasLayer.new()
+	scare_layer.layer = 4
+	add_child(scare_layer)
+	scare_flash = ColorRect.new()
+	scare_flash.name = "ScareFlash"
+	scare_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	scare_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	scare_flash.color = Color(0.82, 0.035, 0.018, 0.0)
+	scare_flash.visible = false
+	scare_layer.add_child(scare_flash)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch and not touch_enabled:
@@ -266,6 +280,7 @@ func start_run(sector_id: int, floor_number: int = 0, map_seed: int = -1) -> voi
 	breath_timer = 0
 	transition_time = 0
 	start_fade = 0.8
+	scare_flash.visible = false
 	map_visible = false
 	tutorial_step = 0
 	tutorial_seen.clear()
@@ -302,6 +317,7 @@ func _dispose_run() -> void:
 
 func return_to_menu() -> void:
 	state = "menu"
+	scare_flash.visible = false
 	_dispose_run()
 	InputSetup.release_movement()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -551,17 +567,53 @@ func die() -> void:
 	transition_time = 0
 	player.stop_input()
 	creature.active = false
+	creature.velocity = Vector3.ZERO
 	world.playing = false
 	player.viewmodel.hide()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	audio.play("caught", -3)
-	player.camera.look_at(creature.global_position + Vector3(0, 1.94, 0))
+	var forward: Vector3 = -player.camera.global_basis.z
+	forward.y = 0
+	forward = forward.normalized()
+	scare_staging_position = player.global_position + forward * 2.1
+	scare_staging_position.y = player.global_position.y
+	scare_impact_position = player.global_position + forward * 0.58
+	scare_impact_position.y = player.global_position.y
+	creature.global_position = scare_staging_position
+	var toward_camera: Vector3 = player.camera.global_position - scare_staging_position
+	scare_heading = atan2(-toward_camera.x, -toward_camera.z)
+	creature.rotation.y = scare_heading
+	creature.model.root.scale = Vector3.ONE * 1.08
+	for arm in creature.model.arms:
+		arm.rotation.z = signf(arm.position.x) * 0.30
+	player.camera.look_at(creature.global_position + Vector3(0, 2.15, 0))
+	scare_flash.visible = not bool(progress.settings.reduced_effects)
+	scare_flash.color = Color(1.0, 0.90, 0.78, 0.72)
+	audio.play("scream", -4, randf_range(0.96, 1.04))
+	audio.play("caught", -9)
 	post.set_shader_parameter("fear", 1.0)
 
 func _update_death(delta: float) -> void:
 	transition_time += delta
+	var lunge := smoothstep(0.0, 0.42, transition_time)
+	if is_instance_valid(creature):
+		creature.global_position = scare_staging_position.lerp(scare_impact_position, lunge)
+		creature.rotation.y = scare_heading
+		creature.model.root.scale = Vector3.ONE * lerpf(1.08, 1.25, lunge)
+		creature.model.root.rotation.x = sin(transition_time * 24.0) * 0.045 * (1.0 - lunge)
+		for arm in creature.model.arms:
+			arm.rotation.z = signf(arm.position.x) * lerpf(0.30, 0.52, lunge)
+		player.camera.look_at(creature.global_position + Vector3(0, 2.15, 0))
+		if not bool(progress.settings.reduced_effects):
+			var camera_kick: float = sin(transition_time * 48.0) * 0.024 * exp(-transition_time * 1.7)
+			player.camera.rotation.z = camera_kick
+	if scare_flash.visible:
+		var flash_alpha := 0.20 * exp(-transition_time * 5.0)
+		if transition_time < 0.055:
+			flash_alpha = 0.72 * (1.0 - transition_time / 0.055)
+		scare_flash.color = Color(1.0, 0.90, 0.78, flash_alpha)
 	post.set_shader_parameter("fade", clampf((transition_time - 0.6) / 1.6, 0, 0.94))
 	if transition_time > 2.2:
+		scare_flash.visible = false
 		state = "result"
 		ui.show_result(false)
 
