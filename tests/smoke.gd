@@ -231,6 +231,7 @@ func run(app) -> Dictionary:
 	var remaining_lunge_distance: float = app.creature.global_position.distance_to(app.scare_impact_position)
 	check(remaining_lunge_distance < initial_lunge_distance, "Caught creature lunges into the camera")
 	check(app.creature.model.root.scale.x > 1.08, "Capture enlarges the creature during impact")
+	check(app.creature.model.arms[0].rotation.x > 0.45, "Creature reaches toward the player during its lunge")
 	check(not is_zero_approx(app.player.camera.rotation.z), "Full effects add a brief camera jolt")
 	app._update_death(2.1)
 	check(app.state == "result" and not app.scare_flash.visible, "Capture fades to a retry result screen")
@@ -370,6 +371,7 @@ func _test_junction_approach(app, creature) -> void:
 	var saved_memory_time: float = creature.memory
 	var saved_sense_timer: float = creature.sense_timer
 	var saved_path_timer: float = creature.path_timer
+	var saved_awake_time: float = creature.awake_time
 	var saved_velocity: Vector3 = creature.velocity
 	var saved_path: Array[Vector2i] = []
 	for step in creature.path:
@@ -388,9 +390,18 @@ func _test_junction_approach(app, creature) -> void:
 	check(creature._can_steer_to_memory(), "A visible four-way target bypasses cell-center steering")
 	check(creature.navigation_aim().is_equal_approx(junction), "Pursuit aims at the player's sub-cell junction position")
 	var distance_before: float = creature.global_position.distance_to(junction)
-	await frames(app, 10)
+	var catch_callback := Callable(app, "die")
+	var had_catch_callback: bool = creature.caught.is_connected(catch_callback)
+	if had_catch_callback:
+		creature.caught.disconnect(catch_callback)
+	await frames(app, 60)
+	if had_catch_callback:
+		creature.caught.connect(catch_callback)
 	var distance_after: float = creature.global_position.distance_to(junction)
 	check(distance_after < distance_before - 0.25, "Creature closes smoothly on a player at the junction")
+	check(distance_after < 0.18, "Creature converges instead of orbiting the stationary junction target")
+	var destination_cell_center: Vector3 = Maze.to_world(Maze.to_cell(junction), 0.03)
+	check(creature.global_position.distance_to(destination_cell_center) > 1.0, "Creature reaches the sub-cell target without snapping to its center")
 	app.player.global_position = saved_player_position
 	creature.global_position = saved_enemy_position
 	creature.state = saved_state
@@ -399,6 +410,7 @@ func _test_junction_approach(app, creature) -> void:
 	creature.memory = saved_memory_time
 	creature.sense_timer = saved_sense_timer
 	creature.path_timer = saved_path_timer
+	creature.awake_time = saved_awake_time
 	creature.velocity = saved_velocity
 	creature.path = saved_path
 

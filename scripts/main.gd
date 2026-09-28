@@ -574,17 +574,18 @@ func die() -> void:
 	var forward: Vector3 = -player.camera.global_basis.z
 	forward.y = 0
 	forward = forward.normalized()
-	scare_staging_position = player.global_position + forward * 2.1
+	scare_staging_position = player.global_position + forward * 2.35
 	scare_staging_position.y = player.global_position.y
-	scare_impact_position = player.global_position + forward * 1.05
+	scare_impact_position = player.global_position + forward * 1.15
 	scare_impact_position.y = player.global_position.y
 	creature.global_position = scare_staging_position
 	var toward_camera: Vector3 = player.camera.global_position - scare_staging_position
 	scare_heading = atan2(-toward_camera.x, -toward_camera.z)
 	creature.rotation.y = scare_heading
-	creature.model.root.scale = Vector3.ONE * 1.08
+	creature.model.root.scale = Vector3.ONE
 	for arm in creature.model.arms:
-		arm.rotation.z = signf(arm.position.x) * 0.30
+		arm.rotation.x = 0.45
+		arm.rotation.z = signf(arm.position.x) * 0.20
 	player.camera.look_at(creature.model.head.global_position)
 	player.camera.rotation.z = 0.0
 	scare_flash.visible = not bool(progress.settings.reduced_effects)
@@ -595,17 +596,18 @@ func die() -> void:
 
 func _update_death(delta: float) -> void:
 	transition_time += delta
-	var lunge := smoothstep(0.0, 0.42, transition_time)
+	var lunge := smoothstep(0.0, 0.34, transition_time)
 	if is_instance_valid(creature):
 		creature.global_position = scare_staging_position.lerp(scare_impact_position, lunge)
 		creature.rotation.y = scare_heading
-		creature.model.root.scale = Vector3.ONE * lerpf(1.08, 1.25, lunge)
-		creature.model.root.rotation.x = sin(transition_time * 24.0) * 0.045 * (1.0 - lunge)
+		creature.model.root.scale = Vector3.ONE * lerpf(1.0, 1.55, lunge)
+		creature.model.root.rotation.x = sin(transition_time * 27.0) * 0.06 * (1.0 - lunge)
 		for arm in creature.model.arms:
-			arm.rotation.z = signf(arm.position.x) * lerpf(0.30, 0.52, lunge)
+			arm.rotation.x = lerpf(0.45, 1.15, lunge)
+			arm.rotation.z = signf(arm.position.x) * lerpf(0.20, 0.42, lunge)
 		player.camera.look_at(creature.model.head.global_position)
 		if not bool(progress.settings.reduced_effects):
-			var camera_kick: float = sin(transition_time * 48.0) * 0.024 * exp(-transition_time * 1.7)
+			var camera_kick: float = sin(transition_time * 52.0) * 0.040 * exp(-transition_time * 1.7)
 			player.camera.rotation.z = camera_kick
 		else:
 			player.camera.rotation.z = 0.0
