@@ -450,6 +450,8 @@ if(sub){ctx.fillStyle='rgba(150,160,168,0.75)';ctx.font='7px "Courier New", mono
 ctx.textAlign='left';
 ctx.globalAlpha=1;
 }
+/* Спуск по лестнице от первого лица: марш уходит вправо-вглубь к точке схода,
+   камера покачивается на каждой ступени. Без поворотов кадра — чистая перспектива. */
 function drawStairDescent(t){
 const tau0=WIN_BLACK_END,tau1=WIN_STAIRS_END;
 const p=Math.max(0,Math.min(1,(t-tau0)/(tau1-tau0)));
@@ -457,140 +459,130 @@ const eased=p*p*(3-2*p);
 const d=STAIR_TOTAL_STEPS*eased;
 const frac=d-Math.floor(d);
 const bob=Math.abs(Math.sin(d*Math.PI));
-const cy=H/2,vpx=W/2;
-const z0=0.60,depth=0.55,rise=0.062,eyeH=0.40,wallHalf=0.95;
-const f=H*0.58;
 const bobY=-bob*5.0;
+const z0=0.55,depth=0.5,rise=0.09,eyeH=0.55,wallHalf=1.15,ceilH=2.2,railH=0.5;
+const f=H*0.62;
+const vpx=W*0.64,vpy=H*0.52;      /* точка схода правее центра — марш лежит горизонтально */
+const nearX=W*0.36;
+const slopeK=rise/depth;
+const cy0=vpy-f*slopeK;
+function xAt(z){return vpx+(nearX-vpx)*(z0/z)}
+function dropAt(z){return eyeH+rise*((z-z0)/depth)}
+function yAt(z){return cy0+f*dropAt(z)/z}
+function hwAt(z){return f*wallHalf/z}
+function topAt(z){return vpy-f*ceilH/z}
 ctx.save();
-/* лестничный марш идёт ГОРИЗОНТАЛЬНО через кадр: камера смотрит вдоль марша,
-   ближний край внизу слева, дальний пролёт уходит вправо-вглубь */
-ctx.translate(W/2,H/2+bobY);
-ctx.rotate(0.16+Math.sin(d*Math.PI)*0.011);
-ctx.scale(1.12,1.0);
-ctx.translate(-W/2-46,-H/2+12);
-ctx.fillStyle='#040506';ctx.fillRect(-160,-160,W+320,H+320);
+ctx.translate(0,bobY);
+ctx.fillStyle='#040506';ctx.fillRect(-20,-20,W+40,H+40);
 const flick=Math.max(0.55,0.86+0.10*Math.sin(t*12.7+Math.sin(t*31))+0.04*Math.sin(t*5.3));
 const em=0.5+0.5*Math.sin(t*2.3);
-/* дальняя стена внизу шахты + люк-выход */
+/* дальняя площадка со светящимся люком */
 const zEnd=z0+(STAIR_VISIBLE+1)*depth;
-const hwEnd=f*wallHalf/zEnd;
-const wallTopEnd=cy-f*2.35/zEnd;
-const dropEnd=eyeH+((zEnd-z0)/depth)*rise;
-const wallBotEnd=cy+f*dropEnd/zEnd;
-ctx.fillStyle='rgb(14,14,17)';
-ctx.fillRect(vpx-hwEnd,wallTopEnd,hwEnd*2,wallBotEnd-wallTopEnd);
+const ex=xAt(zEnd),ew=hwAt(zEnd),et=topAt(zEnd),eb=yAt(zEnd);
+ctx.fillStyle='rgb(16,16,20)';
+ctx.fillRect(ex-ew,et,ew*2,eb-et);
 const lampA=0.35+0.4*em;
-const lampX=vpx,lampY=wallTopEnd+6;
-const lg=ctx.createRadialGradient(lampX,lampY,0,lampX,lampY,26);
+const lg=ctx.createRadialGradient(ex,et+8,0,ex,et+8,26);
 lg.addColorStop(0,'rgba(255,60,40,'+(lampA*0.9)+')');
 lg.addColorStop(1,'rgba(255,60,40,0)');
-ctx.fillStyle=lg;ctx.fillRect(lampX-26,lampY-26,52,52);
+ctx.fillStyle=lg;ctx.fillRect(ex-26,et-18,52,52);
 ctx.fillStyle='rgba(255,90,60,'+(0.5+0.5*em)+')';
-ctx.fillRect(lampX-2,lampY-2,4,4);
-/* свет внизу у выхода — разгорается к концу спуска */
+ctx.fillRect(ex-2,et+6,4,4);
 const glowP=Math.pow(p,2.2);
-const dg=ctx.createRadialGradient(vpx,wallBotEnd-4,0,vpx,wallBotEnd-4,hwEnd*2.4);
-dg.addColorStop(0,'rgba(255,240,200,'+(0.12+glowP*0.75)+')');
+const dg=ctx.createRadialGradient(ex,eb-6,0,ex,eb-6,ew*2.4);
+dg.addColorStop(0,'rgba(255,240,200,'+(0.12+glowP*0.8)+')');
 dg.addColorStop(1,'rgba(255,220,150,0)');
-ctx.fillStyle=dg;ctx.fillRect(vpx-hwEnd*2.4,wallTopEnd,hwEnd*4.8,wallBotEnd-wallTopEnd);
+ctx.fillStyle=dg;ctx.fillRect(ex-ew*2.4,et,ew*4.8,eb-et+10);
 ctx.fillStyle='rgba(255,245,215,'+(glowP*0.9)+')';
-ctx.fillRect(vpx-hwEnd*0.35,wallBotEnd-16,hwEnd*0.7,16);
-/* лампы на потолке шахты */
-for(const lz of[1.7,3.4]){
-const lx=vpx,ly=cy-f*2.4/lz;
+ctx.fillRect(ex-ew*0.35,eb-14,ew*0.7,14);
+/* потолочные лампы */
+for(const lz of[1.6,3.2]){
+const lx=xAt(lz),ly=topAt(lz)+3;
 const ll=1/(1+lz*lz*0.16)*flick;
-const lgr=ctx.createRadialGradient(lx,ly,0,lx,ly,18);
+const lgr=ctx.createRadialGradient(lx,ly,0,lx,ly,20);
 lgr.addColorStop(0,'rgba(220,225,200,'+(0.30*ll)+')');
 lgr.addColorStop(1,'rgba(220,225,200,0)');
-ctx.fillStyle=lgr;ctx.fillRect(lx-18,ly-18,36,36);
+ctx.fillStyle=lgr;ctx.fillRect(lx-20,ly-20,40,40);
 ctx.fillStyle='rgba(220,225,200,'+(0.6*ll)+')';
-ctx.fillRect(lx-4,ly-1,8,2);
+ctx.fillRect(lx-5,ly-1,10,2);
 }
-/* ступени: сверху вниз, дальние рисуются первыми */
+/* ступени: дальние первыми */
 for(let n=STAIR_VISIBLE;n>=1;n--){
-const rr2=n-frac; // расстояние до носика в глубине ступеней
-const z=z0+rr2*depth;
+const rr2=n-frac;
 if(rr2<-0.4)continue;
-const dropH=eyeH+rr2*rise;
-const yN=cy+f*dropH/z;
-const hw=f*wallHalf/z;
+const z=z0+rr2*depth;
+const yN=yAt(z);
+const hw=hwAt(z);
+const xC=xAt(z);
 const rProj=f*rise/z;
-if(yN-rProj>H+60)continue;
+if(yN-rProj>H+80)continue;
 const shade=Math.min(1.15,(1/(1+z*z*0.16))*flick);
-/* подступёнок (тёмная вертикальная полоса под носиком) */
-const rr2c=Math.max(0.02,rr2);
-ctx.fillStyle='rgb('+Math.min(255,Math.round(26*shade))+','+Math.min(255,Math.round(25*shade))+','+Math.min(255,Math.round(30*shade))+')';
-ctx.fillRect(vpx-hw,yN,hw*2,rProj);
-/* проступь (горизонтальная поверхность до следующего носика) */
+/* подступёнок */
+ctx.fillStyle='rgb('+Math.round(26*shade)+','+Math.round(25*shade)+','+Math.round(30*shade)+')';
+ctx.fillRect(xC-hw,yN,hw*2,rProj);
+/* проступь до ближнего носика */
 const rrPrev=rr2-1;
 const zPrev=z0+Math.max(0.05,rrPrev)*depth;
-const dropPrev=eyeH+Math.max(0,rrPrev)*rise;
-const yPrev=rrPrev<0.02?H+70:cy+f*dropPrev/zPrev;
-const hwPrev=f*wallHalf/zPrev;
-const tr=Math.round(46*shade),tg2=Math.round(43*shade),tb=Math.round(40*shade);
-ctx.fillStyle='rgb('+tr+','+tg2+','+tb+')';
+const yPrev=rrPrev<0.02?H+90:yAt(zPrev);
+const hwPrev=hwAt(zPrev);
+const xPrev=xAt(zPrev);
+ctx.fillStyle='rgb('+Math.round(46*shade)+','+Math.round(43*shade)+','+Math.round(40*shade)+')';
 ctx.beginPath();
-ctx.moveTo(vpx-hw,yN+rProj);
-ctx.lineTo(vpx+hw,yN+rProj);
-ctx.lineTo(vpx+hwPrev,yPrev);
-ctx.lineTo(vpx-hwPrev,yPrev);
+ctx.moveTo(xC-hw,yN+rProj);
+ctx.lineTo(xC+hw,yN+rProj);
+ctx.lineTo(xPrev+hwPrev,yPrev);
+ctx.lineTo(xPrev-hwPrev,yPrev);
 ctx.closePath();ctx.fill();
-/* жёлтый носик ступени */
+/* жёлтый носик */
 ctx.fillStyle='rgba(206,158,66,'+(0.55*Math.min(1,shade))+')';
-ctx.fillRect(vpx-hw,yN-1,hw*2,Math.max(1.5,rProj*0.14));
+ctx.fillRect(xC-hw,yN-1,hw*2,Math.max(1.5,rProj*0.14));
 }
 /* стены шахты */
 function wallPoly(sideSign){
 const zA=z0+0.02,zB=z0+(STAIR_VISIBLE+1)*depth;
-const hA=f*wallHalf/zA,hB=f*wallHalf/zB;
-const dA=eyeH+((zA-z0)/depth)*rise,dB=eyeH+((zB-z0)/depth)*rise;
-const yA=cy+f*dA/zA,yB=cy+f*dB/zB;
-const tA=cy-f*2.5/zA,tB=cy-f*2.5/zB;
-const xA=vpx+sideSign*hA,xB=vpx+sideSign*hB;
-ctx.fillStyle='rgb(19,19,23)';
+const xA=xAt(zA)+sideSign*hwAt(zA),xB=xAt(zB)+sideSign*hwAt(zB);
+const yA=yAt(zA),yB=yAt(zB);
+const tA=topAt(zA),tB=topAt(zB);
+ctx.fillStyle='rgb(25,25,31)';
 ctx.beginPath();
 ctx.moveTo(xA,yA);ctx.lineTo(xB,yB);ctx.lineTo(xB,tB);ctx.lineTo(xA,tA);
 ctx.closePath();ctx.fill();
 }
 wallPoly(-1);wallPoly(1);
-/* перила справа + стойки */
-const railH=0.55;
+/* перила справа */
 for(let n=1;n<=STAIR_VISIBLE;n++){
 const rr2=n-frac;
 if(rr2<0.05)continue;
 const z=z0+rr2*depth;
-const dropH=eyeH+rr2*rise;
-const yN=cy+f*dropH/z;
-const yR=cy+f*(dropH-railH)/z;
-const hw=f*wallHalf/z;
-const rx=vpx+hw*0.86;
+const xC=xAt(z)+hwAt(z)*0.86;
+const yF=yAt(z);
+const yR=cy0+f*(dropAt(z)-railH)/z;
 const shade=Math.min(1,(1/(1+z*z*0.16))*flick);
 ctx.strokeStyle='rgba('+Math.round(74*shade)+','+Math.round(80*shade)+','+Math.round(86*shade)+',0.95)';
 ctx.lineWidth=Math.max(1,2.6/z);
-ctx.beginPath();ctx.moveTo(rx,yN);ctx.lineTo(rx,yR);ctx.stroke();
+ctx.beginPath();ctx.moveTo(xC,yF);ctx.lineTo(xC,yR);ctx.stroke();
 }
 {
-const zA=z0+0.1,zB=z0+(STAIR_VISIBLE)*depth;
-const dA=eyeH+((zA-z0)/depth)*rise,dB=eyeH+((zB-z0)/depth)*rise;
-const yRA=cy+f*(dA-railH)/zA,yRB=cy+f*(dB-railH)/zB;
-const xA=vpx+f*wallHalf/zA*0.86,xB=vpx+f*wallHalf/zB*0.86;
-ctx.strokeStyle='rgba('+Math.round(96*flick)+','+Math.round(102*flick)+','+Math.round(108*flick)+',0.95)';
+const zA=z0+0.1,zB=z0+STAIR_VISIBLE*depth;
+const xA=xAt(zA)+hwAt(zA)*0.86,xB=xAt(zB)+hwAt(zB)*0.86;
+const yRA=cy0+f*(dropAt(zA)-railH)/zA,yRB=cy0+f*(dropAt(zB)-railH)/zB;
+ctx.strokeStyle='rgba('+Math.round(116*flick)+','+Math.round(122*flick)+','+Math.round(128*flick)+',0.95)';
 ctx.lineWidth=3;
 ctx.beginPath();ctx.moveTo(xA,yRA);ctx.lineTo(xB,yRB);ctx.stroke();
 ctx.strokeStyle='rgba(150,158,164,0.35)';
 ctx.lineWidth=1;
 ctx.beginPath();ctx.moveTo(xA,yRA-2);ctx.lineTo(xB,yRB-1);ctx.stroke();
 }
-/* красная аварийная подсветка */
+/* красная аварийная подсветка + зерно */
 ctx.fillStyle='rgba(120,10,10,'+(0.05+0.05*em)+')';
-ctx.fillRect(-40,-40,W+80,H+80);
-/* зерно */
+ctx.fillRect(-20,-20,W+40,H+40);
 for(let gi=0;gi<80;gi++){
 const gx=Math.random()*W,gy=Math.random()*H;
 ctx.fillStyle=Math.random()<0.5?'rgba(255,255,255,0.035)':'rgba(0,0,0,0.06)';
 ctx.fillRect(gx,gy,1.4,1.4);
 }
-/* подписи */
+ctx.restore();
+/* подписи — без наклона */
 if(p<0.88){
 const cA=Math.min(1,(t-tau0)/0.5)*Math.min(1,(0.95-p)/0.07);
 drawStairCaption('СПУСК ПО ЛЕСТНИЦЕ','АВАРИЙНЫЙ ШЛЮЗ ЗАКРЫТ ЗА ВАМИ · СТУПЕНЬ '+Math.min(STAIR_TOTAL_STEPS,Math.floor(d))+' / '+STAIR_TOTAL_STEPS,cA);
@@ -598,7 +590,6 @@ drawStairCaption('СПУСК ПО ЛЕСТНИЦЕ','АВАРИЙНЫЙ ШЛЮЗ
 const cA=Math.min(1,(p-0.88)/0.06);
 drawStairCaption('СЛЕДУЮЩИЙ СЕКТОР ВНИЗУ','ПРИГОТОВЬТЕСЬ',cA);
 }
-ctx.restore();
 }
 function drawWinSequence(){const t=G.winTimer;const approachP=Math.max(0,Math.min(1,t/WIN_APPROACH_END));const doorP=Math.max(0,Math.min(1,(t-WIN_APPROACH_END)/(WIN_DOOR_OPEN_END-WIN_APPROACH_END)));const lightP=Math.max(0,Math.min(1,(t-WIN_DOOR_OPEN_END)/(WIN_LIGHT_END-WIN_DOOR_OPEN_END)));const blackP=Math.max(0,Math.min(1,(t-WIN_LIGHT_END)/(WIN_BLACK_END-WIN_LIGHT_END)));const s=canvas.width/W;ctx.save();ctx.scale(s,s);let sx=0;if(approachP>0&&approachP<1)sx=Math.sin(t*40)*1.5*(1-approachP);ctx.translate(sx,0);
 if(t<WIN_BLACK_END+0.3){
