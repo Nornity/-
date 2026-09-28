@@ -101,8 +101,7 @@ const MAX_DECALS=20,MAX_WALL_DECALS_PER_CELL=3;
 const PITCH_MAX=HORIZON_BASE*0.85,SCARE_TURN_END=1.0,SCARE_DARKEN_END=4.0,SCARE_BLOOD_START=4.5,SCARE_BLOOD_INTERVAL=0.6,SCARE_BLOOD_COUNT=4,SCARE_TOTAL=6.8;
 /* Таймлайн победы: подход к шлюзу -> створки -> свет -> затемнение (вход в шлюз)
    -> СПУСК ПО ЛЕСТНИЦЕ ОТ ПЕРВОГО ЛИЦА -> свет внизу -> экран победы. */
-const WIN_APPROACH_END=1.2,WIN_DOOR_OPEN_END=2.2,WIN_LIGHT_END=3.2,WIN_BLACK_END=3.9,WIN_STAIRS_END=11.2,WIN_TOTAL=12.0;
-const STAIR_TOTAL_STEPS=22,STAIR_VISIBLE=11;
+const WIN_APPROACH_END=1.2,WIN_DOOR_OPEN_END=2.2,WIN_LIGHT_END=3.2,WIN_BLACK_END=3.9,WIN_LIFT_END=11.8,WIN_TOTAL=12.6;
 const DOOR_OPEN_DURATION=1.6;
 const BASE_MOUSE_SENS=0.0024,DEV_PASSWORD='132838',FALL_DURATION=0.45,GETUP_DURATION=0.55;
 const PITCH_MOUSE_MUL=380;
@@ -257,7 +256,7 @@ function getObjective(){const cfg=G.cfg;if(G.fuses>=cfg.fuses)return{x:G.door.x,
 function placeSecrets(count){const placed=[];const attempts=700;for(let a=0;a<attempts&&placed.length<count;a++){const side=(Math.random()*4)|0;const xAlong=2+((Math.random()*(G.MW-4))|0);const yAlong=2+((Math.random()*(G.MH-4))|0);let breakX,breakY,roomX,roomY,insideX,insideY;if(side===0){breakX=xAlong;breakY=1;roomX=xAlong;roomY=0;insideX=xAlong;insideY=2}else if(side===1){breakX=xAlong;breakY=G.MH-2;roomX=xAlong;roomY=G.MH-1;insideX=xAlong;insideY=G.MH-3}else if(side===2){breakX=1;breakY=yAlong;roomX=0;roomY=yAlong;insideX=2;insideY=yAlong}else{breakX=G.MW-2;breakY=yAlong;roomX=G.MW-1;roomY=yAlong;insideX=G.MW-3;insideY=yAlong}if(G.map[breakY][breakX]!==TILE_WALL)continue;if(G.map[insideY][insideX]!==0)continue;if(G.map[roomY][roomX]!==TILE_WALL)continue;if(Math.hypot(breakX+0.5-G.px,breakY+0.5-G.py)<6)continue;let collide=false;for(const p of placed){if(Math.hypot(p.bx-breakX,p.by-breakY)<5){collide=true;break}}if(collide)continue;G.map[breakY][breakX]=TILE_BREAK;G.map[roomY][roomX]=0;G.sprites.push({x:roomX+0.5+0.10,y:roomY+0.5+0.10,type:'battery',tex:SPR.battery,h:0.30,alive:true,phase:Math.random()*6.28});G.sprites.push({x:roomX+0.5-0.10,y:roomY+0.5-0.10,type:'battery',tex:SPR.battery,h:0.30,alive:true,phase:Math.random()*6.28});if(Math.random()<0.4){G.sprites.push({x:roomX+0.5,y:roomY+0.5,type:'fuse',tex:SPR.fuse,h:0.32,alive:true,phase:Math.random()*6.28})}placed.push({bx:breakX,by:breakY,roomX,roomY})}return placed}
 function preloadWallBlood(count){let placed=0;let attempts=0;while(placed<count&&attempts<count*20){attempts++;const mx=1+((Math.random()*(G.MW-2))|0);const my=1+((Math.random()*(G.MH-2))|0);if(G.map[my][mx]!==TILE_WALL)continue;addWallBlood(mx,my);placed++}}
 function breakWall(mx,my){if(mx<0||my<0||mx>=G.MW||my>=G.MH)return;if(G.map[my][mx]!==TILE_BREAK)return;G.map[my][mx]=0;Snd.wallBreak();G.shake=Math.max(G.shake,0.85);setMessage('Стена сломана — шум разнёсся по коридорам!','#e0a040',2.6);if(G.monster&&G.monster.stunTimer<=0&&!G.cfg.tutorial){G.monster.rockInvestigate={x:mx+0.5,y:my+0.5,timer:6.0};if(G.monster.state!=='chase'){G.monster.state='search';G.monster.searchTimer=6.0}}spawnBloodDecal(mx+0.5,my+0.5)}
-function applyLevelConfig(cfg){G.cfg=cfg;rebuildColorLUT(cfg.contrast);const baseW=cfg.mazeW;const baseH=cfg.mazeH;const baseMap=generateMaze(baseW,baseH);G.MW=baseW+2;G.MH=baseH+2;G.map=[];for(let y=0;y<G.MH;y++)G.map.push(new Array(G.MW).fill(TILE_WALL));for(let y=0;y<baseH;y++){for(let x=0;x<baseW;x++){G.map[y+1][x+1]=baseMap[y][x]}}G.px=2.5;G.py=2.5;if(!canStand(G.px,G.py)){let best=null,bestD=Infinity;for(let y=2;y<G.MH-2;y++){for(let x=2;x<G.MW-2;x++){if(G.map[y][x]!==0)continue;const d=Math.hypot(x+0.5-G.px,y+0.5-G.py);if(d<bestD){bestD=d;best={x:x+0.5,y:y+0.5}}}}if(best){G.px=best.x;G.py=best.y}}G.yaw=0;G.pitch=0;G.fuses=0;G.battery=cfg.startBattery||100;G.storedBatteries=cfg.tutorial?2:0;G.flashlight=true;G.stamina=STAMINA_MAX;G.adrenalineActive=false;G.adrenalineTimer=0;G.adrenalineCooldown=0;G.breathTimer=0;G.fatiguePitch=0;G.fatigueTunnel=0;G.sprinting=false;G.crouching=false;G.crouchViewOffset=STAND_VIEW_OFFSET;G.tripTimer=0;G.tripCooldown=0;G.isMoving=false;G.mouseBufYaw=0;G.mouseBufPitch=0;G.fear=0;G.time=0;G.shake=0;G.redTint=0;G.messages=[];G.deathTimer=0;G.knifeHitsPlayed=0;G.bloodSplatters=[];G.growlTimer=5+Math.random()*6;G.laughTimer=6+Math.random()*6;G.staticBurst=0;G.showMap=true;G.lowBatteryWarned=false;G.stepPhase=0;G.bobPhase=0;G.heartTimer=0;G.noiseLevel=0;G.batteryRespawnQueue=[];G.taserSlots=[];for(let i=0;i<cfg.taserMaxAmmo;i++){G.taserSlots.push({loaded:true,animT:0,chargeT:0})}G.taserKick=0;G.taserShotCooldown=0;G.taserFlash=0;G.rocksLeft=THROW_ROCK_START;G.thrownRocks=[];G.rockCooldown=0;G.decals=[];G.floorDecalsGrid=[];for(let y=0;y<G.MH;y++)G.floorDecalsGrid.push(new Array(G.MW).fill(null));G.wallDecals=new Map();G.emergencyFlash=0;G.emergencyTimer=0;G.rageFlash=0;G.winTimer=0;G.winMechanismPlayed=false;G.winFloodPlayed=false;G.winStairStep=-1;G.winClosePlayed=false;G.winBangTimes=[1.4,3.0,4.7];G.winBangPlayed=[false,false,false];G.tutorialStep=0;G.tutorialPrevYaw=0;G.tutorialFlashlightUsed=false;G.tutorialSpaceUsed=false;G.tutorialRUsed=false;G.tutorialQUsed=false;G.tutorialMUsed=false;G.tutorialMoveStarted=false;G.doorAnim={active:false,progress:0};G.doorUnlockPlayed=false;G.doorMechPlayed=false;G.explored=[];for(let y=0;y<G.MH;y++)G.explored.push(new Uint8Array(G.MW));const cells=[];for(let y=2;y<G.MH-2;y++){for(let x=2;x<G.MW-2;x++){if(G.map[y][x]===0)cells.push({x,y,d:Math.hypot(x-G.px,y-G.py)})}}cells.sort((a,b)=>b.d-a.d);const far=cells[0];let doorSet=false;for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=far.x+dx,ny=far.y+dy;if(nx>1&&ny>1&&nx<G.MW-2&&ny<G.MH-2&&G.map[ny][nx]===TILE_WALL){G.map[ny][nx]=TILE_DOOR;G.door.x=nx+0.5;G.door.y=ny+0.5;G.door.cx=nx;G.door.cy=ny;doorSet=true;break}}if(!doorSet){G.map[far.y][far.x]=TILE_DOOR;G.door.x=far.x+0.5;G.door.y=far.y+0.5;G.door.cx=far.x;G.door.cy=far.y}G.sprites=[];const used=[];function pickCell(minDistFromStart,minDistFromOthers){for(let attempt=0;attempt<900;attempt++){const c=cells[(Math.random()*cells.length)|0];if(c.d<minDistFromStart)continue;if(G.map[c.y][c.x]!==0)continue;let ok=true;for(const u of used){if(Math.hypot(u.x-c.x,u.y-c.y)<minDistFromOthers){ok=false;break}}if(!ok)continue;used.push(c);return c}const c=cells[(Math.random()*cells.length)|0];used.push(c);return c}const fuseMinDist=cfg.mazeW<=20?4:(cfg.mazeW<=25?6:(cfg.mazeW<=31?8:10));const fuseSep=cfg.mazeW<=20?4:(cfg.mazeW<=25?5:(cfg.mazeW<=31?6:8));for(let i=0;i<cfg.fuses;i++){const c=pickCell(fuseMinDist,fuseSep);G.sprites.push({x:c.x+0.5,y:c.y+0.5,type:'fuse',tex:SPR.fuse,h:0.32,alive:true,phase:Math.random()*6.28})}for(let i=0;i<cfg.batteries;i++){const c=pickCell(4,3);G.sprites.push({x:c.x+0.5,y:c.y+0.5,type:'battery',tex:SPR.battery,h:0.30,alive:true,phase:Math.random()*6.28})}if(!cfg.tutorial){const secretCount=Math.random()<0.25?2:1;G.secrets=placeSecrets(secretCount)}else{G.secrets=[]}if(cfg.preloadBlood&&cfg.preloadBlood>0)preloadWallBlood(cfg.preloadBlood);let mspawn=null;for(const c of cells){if(c.d>=cfg.spawnDistance){mspawn=c;break}}if(!mspawn)mspawn=cells[0];G.monster={x:mspawn.x+0.5,y:mspawn.y+0.5,state:'patrol',path:[],pathTimer:0,target:null,lastKnown:null,memory:0,speed:cfg.monsterPatrolSpeed,alertFlash:0,growlCd:0,stuckTimer:0,facing:Math.random()*Math.PI*2,stunTimer:0,walkPhase:0,fallAmount:0,getUpTimer:0,fallSoundPlayed:false,getUpSoundPlayed:false,searchTimer:0,type:cfg.monsterType,rockInvestigate:null,rageActive:false,rageUntil:-1,nextRageAt:RAGE_INTERVAL_MIN+Math.random()*(RAGE_INTERVAL_MAX-RAGE_INTERVAL_MIN)};if(!canMonsterStand(G.monster.x,G.monster.y)){for(const c of cells){if(canMonsterStand(c.x+0.5,c.y+0.5)){G.monster.x=c.x+0.5;G.monster.y=c.y+0.5;break}}}G.state='playing';updateVectors();
+function applyLevelConfig(cfg){G.cfg=cfg;rebuildColorLUT(cfg.contrast);const baseW=cfg.mazeW;const baseH=cfg.mazeH;const baseMap=generateMaze(baseW,baseH);G.MW=baseW+2;G.MH=baseH+2;G.map=[];for(let y=0;y<G.MH;y++)G.map.push(new Array(G.MW).fill(TILE_WALL));for(let y=0;y<baseH;y++){for(let x=0;x<baseW;x++){G.map[y+1][x+1]=baseMap[y][x]}}G.px=2.5;G.py=2.5;if(!canStand(G.px,G.py)){let best=null,bestD=Infinity;for(let y=2;y<G.MH-2;y++){for(let x=2;x<G.MW-2;x++){if(G.map[y][x]!==0)continue;const d=Math.hypot(x+0.5-G.px,y+0.5-G.py);if(d<bestD){bestD=d;best={x:x+0.5,y:y+0.5}}}}if(best){G.px=best.x;G.py=best.y}}G.yaw=0;G.pitch=0;G.fuses=0;G.battery=cfg.startBattery||100;G.storedBatteries=cfg.tutorial?2:0;G.flashlight=true;G.stamina=STAMINA_MAX;G.adrenalineActive=false;G.adrenalineTimer=0;G.adrenalineCooldown=0;G.breathTimer=0;G.fatiguePitch=0;G.fatigueTunnel=0;G.sprinting=false;G.crouching=false;G.crouchViewOffset=STAND_VIEW_OFFSET;G.tripTimer=0;G.tripCooldown=0;G.isMoving=false;G.mouseBufYaw=0;G.mouseBufPitch=0;G.fear=0;G.time=0;G.shake=0;G.redTint=0;G.messages=[];G.deathTimer=0;G.knifeHitsPlayed=0;G.bloodSplatters=[];G.growlTimer=5+Math.random()*6;G.laughTimer=6+Math.random()*6;G.staticBurst=0;G.showMap=true;G.lowBatteryWarned=false;G.stepPhase=0;G.bobPhase=0;G.heartTimer=0;G.noiseLevel=0;G.batteryRespawnQueue=[];G.taserSlots=[];for(let i=0;i<cfg.taserMaxAmmo;i++){G.taserSlots.push({loaded:true,animT:0,chargeT:0})}G.taserKick=0;G.taserShotCooldown=0;G.taserFlash=0;G.rocksLeft=THROW_ROCK_START;G.thrownRocks=[];G.rockCooldown=0;G.decals=[];G.floorDecalsGrid=[];for(let y=0;y<G.MH;y++)G.floorDecalsGrid.push(new Array(G.MW).fill(null));G.wallDecals=new Map();G.emergencyFlash=0;G.emergencyTimer=0;G.rageFlash=0;G.winTimer=0;G.winMechanismPlayed=false;G.winFloodPlayed=false;G.winClosePlayed=false;G.winBangTimes=[1.2,2.3,3.2];G.winBangPlayed=[false,false,false];G.tutorialStep=0;G.tutorialPrevYaw=0;G.tutorialFlashlightUsed=false;G.tutorialSpaceUsed=false;G.tutorialRUsed=false;G.tutorialQUsed=false;G.tutorialMUsed=false;G.tutorialMoveStarted=false;G.doorAnim={active:false,progress:0};G.doorUnlockPlayed=false;G.doorMechPlayed=false;G.explored=[];for(let y=0;y<G.MH;y++)G.explored.push(new Uint8Array(G.MW));const cells=[];for(let y=2;y<G.MH-2;y++){for(let x=2;x<G.MW-2;x++){if(G.map[y][x]===0)cells.push({x,y,d:Math.hypot(x-G.px,y-G.py)})}}cells.sort((a,b)=>b.d-a.d);const far=cells[0];let doorSet=false;for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=far.x+dx,ny=far.y+dy;if(nx>1&&ny>1&&nx<G.MW-2&&ny<G.MH-2&&G.map[ny][nx]===TILE_WALL){G.map[ny][nx]=TILE_DOOR;G.door.x=nx+0.5;G.door.y=ny+0.5;G.door.cx=nx;G.door.cy=ny;doorSet=true;break}}if(!doorSet){G.map[far.y][far.x]=TILE_DOOR;G.door.x=far.x+0.5;G.door.y=far.y+0.5;G.door.cx=far.x;G.door.cy=far.y}G.sprites=[];const used=[];function pickCell(minDistFromStart,minDistFromOthers){for(let attempt=0;attempt<900;attempt++){const c=cells[(Math.random()*cells.length)|0];if(c.d<minDistFromStart)continue;if(G.map[c.y][c.x]!==0)continue;let ok=true;for(const u of used){if(Math.hypot(u.x-c.x,u.y-c.y)<minDistFromOthers){ok=false;break}}if(!ok)continue;used.push(c);return c}const c=cells[(Math.random()*cells.length)|0];used.push(c);return c}const fuseMinDist=cfg.mazeW<=20?4:(cfg.mazeW<=25?6:(cfg.mazeW<=31?8:10));const fuseSep=cfg.mazeW<=20?4:(cfg.mazeW<=25?5:(cfg.mazeW<=31?6:8));for(let i=0;i<cfg.fuses;i++){const c=pickCell(fuseMinDist,fuseSep);G.sprites.push({x:c.x+0.5,y:c.y+0.5,type:'fuse',tex:SPR.fuse,h:0.32,alive:true,phase:Math.random()*6.28})}for(let i=0;i<cfg.batteries;i++){const c=pickCell(4,3);G.sprites.push({x:c.x+0.5,y:c.y+0.5,type:'battery',tex:SPR.battery,h:0.30,alive:true,phase:Math.random()*6.28})}if(!cfg.tutorial){const secretCount=Math.random()<0.25?2:1;G.secrets=placeSecrets(secretCount)}else{G.secrets=[]}if(cfg.preloadBlood&&cfg.preloadBlood>0)preloadWallBlood(cfg.preloadBlood);let mspawn=null;for(const c of cells){if(c.d>=cfg.spawnDistance){mspawn=c;break}}if(!mspawn)mspawn=cells[0];G.monster={x:mspawn.x+0.5,y:mspawn.y+0.5,state:'patrol',path:[],pathTimer:0,target:null,lastKnown:null,memory:0,speed:cfg.monsterPatrolSpeed,alertFlash:0,growlCd:0,stuckTimer:0,facing:Math.random()*Math.PI*2,stunTimer:0,walkPhase:0,fallAmount:0,getUpTimer:0,fallSoundPlayed:false,getUpSoundPlayed:false,searchTimer:0,type:cfg.monsterType,rockInvestigate:null,rageActive:false,rageUntil:-1,nextRageAt:RAGE_INTERVAL_MIN+Math.random()*(RAGE_INTERVAL_MAX-RAGE_INTERVAL_MIN)};if(!canMonsterStand(G.monster.x,G.monster.y)){for(const c of cells){if(canMonsterStand(c.x+0.5,c.y+0.5)){G.monster.x=c.x+0.5;G.monster.y=c.y+0.5;break}}}G.state='playing';updateVectors();
 if(Snd.ready)Snd.buildDrone(cfg.musicTheme||'radio');
 }
 function startLevel(levelId){const lv=LEVELS.find(l=>l.id===levelId);if(!lv)return;G.mode=lv.tutorial?'tutorial':'campaign';G.level=lv.id;applyLevelConfig(lv)}
@@ -425,9 +424,10 @@ ctx.restore();
 function getMonsterScreenPos(){const px=G.px,py=G.py;const dirX=G.dirX,dirY=G.dirY;const planeX=G.planeX,planeY=G.planeY;const M=G.monster;const invDet=1.0/(planeX*dirY-dirX*planeY);const spriteX=M.x-px;const spriteY=M.y-py;const transformX=invDet*(dirY*spriteX-dirX*spriteY);const transformY=invDet*(-planeY*spriteX+planeX*spriteY);const spriteScreenX=(W/2)*(1+transformX/transformY);const lineH=H/transformY;const horizon=HORIZON_BASE+G.pitch;const bottom=horizon+lineH*0.5;const spriteH=lineH*1.62;const spriteW=spriteH*(52/84);return{x:spriteScreenX,y:bottom-spriteH,w:spriteW,h:spriteH,bottom}}
 function drawDyingSequence(){const t=G.deathTimer;const phase2=Math.max(0,Math.min(1,(t-SCARE_TURN_END)/(SCARE_DARKEN_END-SCARE_TURN_END)));const bloodPhase=t-SCARE_BLOOD_START;const s=canvas.width/W;let sx=0,sy=0;if(G.shake>0.001){sx=(Math.random()-0.5)*G.shake*8;sy=(Math.random()-0.5)*G.shake*8}ctx.save();ctx.scale(s,s);ctx.translate(sx,sy);if(phase2>0){ctx.fillStyle='rgba(0, 0, 0, '+(phase2*0.85)+')';ctx.fillRect(-10,-10,W+20,H+20)}const pos=getMonsterScreenPos();if(pos.w>0&&pos.h>0&&isFinite(pos.x)&&isFinite(pos.y)){const mset=getMonsterSet();const tiltRad=phase2*(Math.PI/4);const drawX=pos.x-pos.w/2;const drawY=pos.y;const pivotX=pos.x;const pivotY=pos.y+pos.h*0.20;ctx.imageSmoothingEnabled=false;ctx.drawImage(mset.bodyCanvas,drawX,drawY,pos.w,pos.h);ctx.save();ctx.translate(pivotX,pivotY);ctx.rotate(tiltRad);ctx.translate(-pivotX,-pivotY);ctx.drawImage(mset.headCanvas,drawX,drawY,pos.w,pos.h);ctx.restore()}if(bloodPhase>0){for(let i=0;i<SCARE_BLOOD_COUNT;i++){const appearAt=i*SCARE_BLOOD_INTERVAL;if(bloodPhase<appearAt)continue;const age=bloodPhase-appearAt;const grow=Math.min(1,age/0.2);const b=G.bloodSplatters[i];if(!b)continue;const drawW=b.size*grow;const drawH=b.size*grow;ctx.globalAlpha=Math.min(1,grow*1.5);ctx.imageSmoothingEnabled=true;ctx.drawImage(b.canvas,b.nx*W-drawW/2,b.ny*H-drawH/2,drawW,drawH);ctx.globalAlpha=1}}for(let i=0;i<SCARE_BLOOD_COUNT;i++){const age=bloodPhase-i*SCARE_BLOOD_INTERVAL;if(age<0||age>0.25)continue;ctx.fillStyle='rgba(140, 0, 0, '+((1-age/0.25)*0.35)+')';ctx.fillRect(-10,-10,W+20,H+20)}if(t>SCARE_TOTAL-0.4){const fade=Math.min(1,(t-(SCARE_TOTAL-0.4))/0.4);ctx.fillStyle='rgba(0, 0, 0, '+fade+')';ctx.fillRect(-10,-10,W+20,H+20)}ctx.restore()}
 /* ============================================================
-   СПУСК ПО ЛЕСТНИЦЕ ОТ ПЕРВОГО ЛИЦА (после прохода через шлюз).
-   Псевдо-3D проекция лестничной шахты поверх затемнённого кадра:
-   ступени, подступенки, жёлтые носики, перила, аварийная лампа.
+   ГРУЗОВОЙ ЛИФТ ОТ ПЕРВОГО ЛИЦА (после прохода через шлюз):
+   двери закрываются, кабина спускается с этажа на этаж,
+   двери открываются на нижнем уровне, игрок выходит
+   и специально прыгает в яму.
    ============================================================ */
 function drawStairCaption(main,sub,alpha){
 ctx.globalAlpha=Math.max(0,Math.min(1,alpha));
@@ -450,155 +450,187 @@ if(sub){ctx.fillStyle='rgba(150,160,168,0.75)';ctx.font='7px "Courier New", mono
 ctx.textAlign='left';
 ctx.globalAlpha=1;
 }
-/* Спуск по лестнице от первого лица: марш уходит вправо-вглубь к точке схода,
-   камера покачивается на каждой ступени. Без поворотов кадра — чистая перспектива. */
-function drawStairDescent(t){
-const tau0=WIN_BLACK_END,tau1=WIN_STAIRS_END;
-const p=Math.max(0,Math.min(1,(t-tau0)/(tau1-tau0)));
-const eased=p*p*(3-2*p);
-const d=STAIR_TOTAL_STEPS*eased;
-const frac=d-Math.floor(d);
-const bob=Math.abs(Math.sin(d*Math.PI));
-const bobY=-bob*5.0;
-const z0=0.55,depth=0.5,rise=0.09,eyeH=0.55,wallHalf=1.15,ceilH=2.2,railH=0.5;
-const f=H*0.62;
-const vpx=W*0.64,vpy=H*0.52;      /* точка схода правее центра — марш лежит горизонтально */
-const nearX=W*0.36;
-const slopeK=rise/depth;
-const cy0=vpy-f*slopeK;
-function xAt(z){return vpx+(nearX-vpx)*(z0/z)}
-function dropAt(z){return eyeH+rise*((z-z0)/depth)}
-function yAt(z){return cy0+f*dropAt(z)/z}
-function hwAt(z){return f*wallHalf/z}
-function topAt(z){return vpy-f*ceilH/z}
+/* нижний уровень: коридор с ямой в полу, закрыт кабиной лифта снаружи */
+function drawLowerCorridor(grow,t,flick){
+const vy=H*0.46;
+ctx.fillStyle='rgb(18,18,22)';
+ctx.beginPath();ctx.moveTo(-20,-20);ctx.lineTo(W+20,-20);ctx.lineTo(W*0.62,H*0.30);ctx.lineTo(W*0.38,H*0.30);ctx.closePath();ctx.fill();
+ctx.fillStyle='rgb(26,25,28)';
+ctx.beginPath();ctx.moveTo(-20,H+20);ctx.lineTo(W+20,H+20);ctx.lineTo(W*0.62,H*0.62);ctx.lineTo(W*0.38,H*0.62);ctx.closePath();ctx.fill();
+ctx.fillStyle='rgb(23,23,27)';
+ctx.beginPath();ctx.moveTo(-20,-20);ctx.lineTo(W*0.38,H*0.30);ctx.lineTo(W*0.38,H*0.62);ctx.lineTo(-20,H+20);ctx.closePath();ctx.fill();
+ctx.beginPath();ctx.moveTo(W+20,-20);ctx.lineTo(W*0.62,H*0.30);ctx.lineTo(W*0.62,H*0.62);ctx.lineTo(W+20,H+20);ctx.closePath();ctx.fill();
+const sh=Math.min(1.1,flick);
+ctx.fillStyle='rgb('+Math.round(31*sh)+','+Math.round(30*sh)+','+Math.round(34*sh)+')';
+ctx.fillRect(W*0.38,H*0.30,W*0.24,H*0.32);
+const wg=ctx.createRadialGradient(W/2,H*0.5,0,W/2,H*0.5,W*0.22);
+wg.addColorStop(0,'rgba(255,210,140,'+(0.18+0.25*grow)+')');
+wg.addColorStop(1,'rgba(255,200,120,0)');
+ctx.fillStyle=wg;ctx.fillRect(W*0.28,H*0.24,W*0.44,H*0.5);
+/* яма в полу */
+const pn=W*(0.15+0.30*grow),pf=W*0.045;
+ctx.fillStyle='#020203';
+ctx.beginPath();ctx.moveTo(W/2-pn,H+20);ctx.lineTo(W/2+pn,H+20);ctx.lineTo(W/2+pf,H*0.63);ctx.lineTo(W/2-pf,H*0.63);ctx.closePath();ctx.fill();
+ctx.strokeStyle='rgba(206,158,66,'+(0.5+0.3*grow)+')';
+ctx.lineWidth=2;
+ctx.beginPath();ctx.moveTo(W/2-pn,H+20);ctx.lineTo(W/2-pf,H*0.63);ctx.stroke();
+ctx.beginPath();ctx.moveTo(W/2+pn,H+20);ctx.lineTo(W/2+pf,H*0.63);ctx.stroke();
+const pg=ctx.createRadialGradient(W/2,H*0.78,0,W/2,H*0.78,W*(0.16+0.22*grow));
+pg.addColorStop(0,'rgba(255,190,110,'+(0.22+0.35*grow)+')');
+pg.addColorStop(1,'rgba(255,180,100,0)');
+ctx.fillStyle=pg;ctx.fillRect(0,H*0.4,W,H*0.6);
+/* лампы коридора */
+for(const lx of[W*0.44,W*0.56]){
+const lg=ctx.createRadialGradient(lx,H*0.28,0,lx,H*0.28,14);
+lg.addColorStop(0,'rgba(220,225,200,'+(0.35*flick)+')');
+lg.addColorStop(1,'rgba(220,225,200,0)');
+ctx.fillStyle=lg;ctx.fillRect(lx-14,H*0.28-14,28,28);
+}
+}
+function drawElevatorSequence(t){
+const EV0=WIN_BLACK_END,EV_CLOSE=4.7,EV_DESC=8.2,EV_OPEN=9.3,EV_EXIT=10.5,EV_FALL=WIN_LIFT_END;
+const cl=v=>Math.max(0,Math.min(1,v));
+const ez=v=>{v=cl(v);return v*v*(3-2*v)};
+const closeP=ez((t-EV0)/(EV_CLOSE-EV0));
+const descP=ez((t-EV_CLOSE)/(EV_DESC-EV_CLOSE));
+const openP=ez((t-EV_DESC)/(EV_OPEN-EV_DESC));
+const exitP=ez((t-EV_OPEN)/(EV_EXIT-EV_OPEN));
+const fallP=ez((t-EV_EXIT)/(EV_FALL-EV_EXIT));
+const openAmt=t<EV_CLOSE?1-closeP:(t<EV_DESC?0:openP);
+const flick=Math.max(0.5,0.85+0.11*Math.sin(t*12.7+Math.sin(t*31))+0.04*Math.sin(t*5.3));
+const lampOn=t>EV0+0.35?flick:0;
+const floorN=Math.min(6,Math.floor(descP*6+0.0001));
+const floorTxt=floorN===0?'0':'\u2212'+floorN;
+/* проём дверей: при выходе раздвигается за экран */
+const dx0=W*0.33-W*0.95*exitP,dx1=W*0.67+W*0.95*exitP;
+const dy0=H*0.16-H*0.85*exitP,dy1=H*0.93+H*0.85*exitP;
+let jx=0,jy=0;
+if(t>EV_CLOSE&&t<EV_DESC){jy=Math.sin(t*17)*1.2+Math.sin(t*7.3)*0.7;jx=Math.sin(t*23)*0.5}
 ctx.save();
-ctx.translate(0,bobY);
-ctx.fillStyle='#040506';ctx.fillRect(-20,-20,W+40,H+40);
-const flick=Math.max(0.55,0.86+0.10*Math.sin(t*12.7+Math.sin(t*31))+0.04*Math.sin(t*5.3));
-const em=0.5+0.5*Math.sin(t*2.3);
-/* дальняя площадка со светящимся люком */
-const zEnd=z0+(STAIR_VISIBLE+1)*depth;
-const ex=xAt(zEnd),ew=hwAt(zEnd),et=topAt(zEnd),eb=yAt(zEnd);
-ctx.fillStyle='rgb(16,16,20)';
-ctx.fillRect(ex-ew,et,ew*2,eb-et);
-const lampA=0.35+0.4*em;
-const lg=ctx.createRadialGradient(ex,et+8,0,ex,et+8,26);
-lg.addColorStop(0,'rgba(255,60,40,'+(lampA*0.9)+')');
-lg.addColorStop(1,'rgba(255,60,40,0)');
-ctx.fillStyle=lg;ctx.fillRect(ex-26,et-18,52,52);
-ctx.fillStyle='rgba(255,90,60,'+(0.5+0.5*em)+')';
-ctx.fillRect(ex-2,et+6,4,4);
-const glowP=Math.pow(p,2.2);
-const dg=ctx.createRadialGradient(ex,eb-6,0,ex,eb-6,ew*2.4);
-dg.addColorStop(0,'rgba(255,240,200,'+(0.12+glowP*0.8)+')');
-dg.addColorStop(1,'rgba(255,220,150,0)');
-ctx.fillStyle=dg;ctx.fillRect(ex-ew*2.4,et,ew*4.8,eb-et+10);
-ctx.fillStyle='rgba(255,245,215,'+(glowP*0.9)+')';
-ctx.fillRect(ex-ew*0.35,eb-14,ew*0.7,14);
-/* потолочные лампы */
-for(const lz of[1.6,3.2]){
-const lx=xAt(lz),ly=topAt(lz)+3;
-const ll=1/(1+lz*lz*0.16)*flick;
-const lgr=ctx.createRadialGradient(lx,ly,0,lx,ly,20);
-lgr.addColorStop(0,'rgba(220,225,200,'+(0.30*ll)+')');
-lgr.addColorStop(1,'rgba(220,225,200,0)');
-ctx.fillStyle=lgr;ctx.fillRect(lx-20,ly-20,40,40);
-ctx.fillStyle='rgba(220,225,200,'+(0.6*ll)+')';
-ctx.fillRect(lx-5,ly-1,10,2);
+ctx.fillStyle='#050405';ctx.fillRect(-20,-20,W+40,H+40);
+/* шахта ямы: видна, когда падаем */
+if(fallP>0){
+for(let i=0;i<14;i++){
+const sxp=(i*97.3)%W;
+const spd=300+((i*53)%160);
+const yy=((t*spd+i*131)%(H+140))-70;
+ctx.strokeStyle='rgba(110,100,90,'+(0.10+0.10*fallP)+')';
+ctx.lineWidth=2;
+ctx.beginPath();ctx.moveTo(sxp,yy);ctx.lineTo(sxp,yy+40+fallP*60);ctx.stroke();
 }
-/* ступени: дальние первыми */
-for(let n=STAIR_VISIBLE;n>=1;n--){
-const rr2=n-frac;
-if(rr2<-0.4)continue;
-const z=z0+rr2*depth;
-const yN=yAt(z);
-const hw=hwAt(z);
-const xC=xAt(z);
-const rProj=f*rise/z;
-if(yN-rProj>H+80)continue;
-const shade=Math.min(1.15,(1/(1+z*z*0.16))*flick);
-/* подступёнок */
-ctx.fillStyle='rgb('+Math.round(26*shade)+','+Math.round(25*shade)+','+Math.round(30*shade)+')';
-ctx.fillRect(xC-hw,yN,hw*2,rProj);
-/* проступь до ближнего носика */
-const rrPrev=rr2-1;
-const zPrev=z0+Math.max(0.05,rrPrev)*depth;
-const yPrev=rrPrev<0.02?H+90:yAt(zPrev);
-const hwPrev=hwAt(zPrev);
-const xPrev=xAt(zPrev);
-ctx.fillStyle='rgb('+Math.round(46*shade)+','+Math.round(43*shade)+','+Math.round(40*shade)+')';
-ctx.beginPath();
-ctx.moveTo(xC-hw,yN+rProj);
-ctx.lineTo(xC+hw,yN+rProj);
-ctx.lineTo(xPrev+hwPrev,yPrev);
-ctx.lineTo(xPrev-hwPrev,yPrev);
-ctx.closePath();ctx.fill();
-/* жёлтый носик */
-ctx.fillStyle='rgba(206,158,66,'+(0.55*Math.min(1,shade))+')';
-ctx.fillRect(xC-hw,yN-1,hw*2,Math.max(1.5,rProj*0.14));
+const gg=ctx.createRadialGradient(W/2,H*1.1,0,W/2,H*1.1,H*0.9);
+gg.addColorStop(0,'rgba(255,220,150,'+(0.25+0.55*fallP)+')');
+gg.addColorStop(1,'rgba(255,200,120,0)');
+ctx.fillStyle=gg;ctx.fillRect(0,0,W,H);
 }
-/* стены шахты */
-function wallPoly(sideSign){
-const zA=z0+0.02,zB=z0+(STAIR_VISIBLE+1)*depth;
-const xA=xAt(zA)+sideSign*hwAt(zA),xB=xAt(zB)+sideSign*hwAt(zB);
-const yA=yAt(zA),yB=yAt(zB);
-const tA=topAt(zA),tB=topAt(zB);
-ctx.fillStyle='rgb(25,25,31)';
-ctx.beginPath();
-ctx.moveTo(xA,yA);ctx.lineTo(xB,yB);ctx.lineTo(xB,tB);ctx.lineTo(xA,tA);
-ctx.closePath();ctx.fill();
+ctx.save();
+ctx.translate(jx,jy-fallP*fallP*H*1.35);
+/* то, что за дверями */
+if(t<EV_DESC){
+const bg=ctx.createLinearGradient(0,dy0,0,dy1);
+bg.addColorStop(0,'rgba(255,240,200,'+(0.5+0.5*closeP)+')');
+bg.addColorStop(1,'rgba(200,170,120,'+(0.35+0.4*closeP)+')');
+ctx.fillStyle=bg;ctx.fillRect(-20,-20,W+40,H+40);
+}else{
+drawLowerCorridor(cl(exitP*1.2+fallP*0.6),t,flick);
 }
-wallPoly(-1);wallPoly(1);
-/* перила справа */
-for(let n=1;n<=STAIR_VISIBLE;n++){
-const rr2=n-frac;
-if(rr2<0.05)continue;
-const z=z0+rr2*depth;
-const xC=xAt(z)+hwAt(z)*0.86;
-const yF=yAt(z);
-const yR=cy0+f*(dropAt(z)-railH)/z;
-const shade=Math.min(1,(1/(1+z*z*0.16))*flick);
-ctx.strokeStyle='rgba('+Math.round(74*shade)+','+Math.round(80*shade)+','+Math.round(86*shade)+',0.95)';
-ctx.lineWidth=Math.max(1,2.6/z);
-ctx.beginPath();ctx.moveTo(xC,yF);ctx.lineTo(xC,yR);ctx.stroke();
-}
-{
-const zA=z0+0.1,zB=z0+STAIR_VISIBLE*depth;
-const xA=xAt(zA)+hwAt(zA)*0.86,xB=xAt(zB)+hwAt(zB)*0.86;
-const yRA=cy0+f*(dropAt(zA)-railH)/zA,yRB=cy0+f*(dropAt(zB)-railH)/zB;
-ctx.strokeStyle='rgba('+Math.round(116*flick)+','+Math.round(122*flick)+','+Math.round(128*flick)+',0.95)';
-ctx.lineWidth=3;
-ctx.beginPath();ctx.moveTo(xA,yRA);ctx.lineTo(xB,yRB);ctx.stroke();
-ctx.strokeStyle='rgba(150,158,164,0.35)';
+/* поверхности кабины закрывают всё вне проёма */
+if(exitP<0.999){
+const L=Math.max(0.25,lampOn);
+ctx.fillStyle='rgb('+Math.round(34*L)+','+Math.round(35*L)+','+Math.round(40*L)+')';
+ctx.beginPath();ctx.moveTo(-20,-20);ctx.lineTo(dx0,dy0);ctx.lineTo(dx0,dy1);ctx.lineTo(-20,H+20);ctx.closePath();ctx.fill();
+ctx.beginPath();ctx.moveTo(W+20,-20);ctx.lineTo(dx1,dy0);ctx.lineTo(dx1,dy1);ctx.lineTo(W+20,H+20);ctx.closePath();ctx.fill();
+ctx.fillStyle='rgb('+Math.round(26*L)+','+Math.round(27*L)+','+Math.round(31*L)+')';
+ctx.beginPath();ctx.moveTo(-20,-20);ctx.lineTo(W+20,-20);ctx.lineTo(dx1,dy0);ctx.lineTo(dx0,dy0);ctx.closePath();ctx.fill();
+ctx.fillStyle='rgb('+Math.round(22*L)+','+Math.round(22*L)+','+Math.round(26*L)+')';
+ctx.beginPath();ctx.moveTo(-20,H+20);ctx.lineTo(W+20,H+20);ctx.lineTo(dx1,dy1);ctx.lineTo(dx0,dy1);ctx.closePath();ctx.fill();
+/* рёбра на стенах */
+ctx.strokeStyle='rgba(0,0,0,'+(0.35*L)+')';
 ctx.lineWidth=1;
-ctx.beginPath();ctx.moveTo(xA,yRA-2);ctx.lineTo(xB,yRB-1);ctx.stroke();
+for(const k of[0.3,0.6]){
+const rx=dx0-(dx0+20)*k;
+ctx.beginPath();ctx.moveTo(rx,dy0-(dy0+20)*k*0.5);ctx.lineTo(rx,dy1+(H+20-dy1)*k*0.5);ctx.stroke();
+const rx2=dx1+(W+20-dx1)*k;
+ctx.beginPath();ctx.moveTo(rx2,dy0-(dy0+20)*k*0.5);ctx.lineTo(rx2,dy1+(H+20-dy1)*k*0.5);ctx.stroke();
 }
-/* красная аварийная подсветка + зерно */
-ctx.fillStyle='rgba(120,10,10,'+(0.05+0.05*em)+')';
-ctx.fillRect(-20,-20,W+40,H+40);
-for(let gi=0;gi<80;gi++){
+/* лампа кабины */
+if(lampOn>0){
+const lg=ctx.createRadialGradient(W/2,dy0+8,0,W/2,dy0+8,30);
+lg.addColorStop(0,'rgba(225,230,205,'+(0.4*lampOn)+')');
+lg.addColorStop(1,'rgba(225,230,205,0)');
+ctx.fillStyle=lg;ctx.fillRect(W/2-30,dy0-22,60,60);
+ctx.fillStyle='rgba(225,230,205,'+(0.7*lampOn)+')';
+ctx.fillRect(W/2-7,dy0+2,14,3);
+}
+/* створки дверей */
+const panelW=(dx1-dx0)/2;
+const closedW=panelW*(1-openAmt);
+const M=Math.max(0.3,lampOn);
+ctx.fillStyle='rgb('+Math.round(64*M)+','+Math.round(66*M)+','+Math.round(72*M)+')';
+ctx.fillRect(dx0,dy0,closedW,dy1-dy0);
+ctx.fillRect(dx1-closedW,dy0,closedW,dy1-dy0);
+ctx.strokeStyle='rgba(0,0,0,'+(0.4*M)+')';
+ctx.lineWidth=1;
+for(let yy=dy0+10;yy<dy1-6;yy+=14){
+ctx.beginPath();ctx.moveTo(dx0+2,yy);ctx.lineTo(dx0+closedW-2,yy);ctx.stroke();
+ctx.beginPath();ctx.moveTo(dx1-closedW+2,yy);ctx.lineTo(dx1-2,yy);ctx.stroke();
+}
+if(closedW>2){
+ctx.fillStyle='rgba(206,158,66,'+(0.7*M)+')';
+ctx.fillRect(dx0+closedW-3,dy0,3,dy1-dy0);
+ctx.fillRect(dx1-closedW,dy0,3,dy1-dy0);
+}
+/* рамка проёма */
+ctx.strokeStyle='rgb('+Math.round(46*M)+','+Math.round(47*M)+','+Math.round(52*M)+')';
+ctx.lineWidth=4;
+ctx.strokeRect(dx0-2,dy0-2,dx1-dx0+4,dy1-dy0+4);
+/* табло этажей над дверью */
+if(exitP<0.6){
+ctx.fillStyle='rgba(5,6,8,0.9)';
+ctx.fillRect(W/2-26,dy0-20,52,15);
+ctx.strokeStyle='rgba(120,130,140,0.4)';
+ctx.lineWidth=1;
+ctx.strokeRect(W/2-25.5,dy0-19.5,51,14);
+ctx.textAlign='center';
+ctx.font='bold 9px "Courier New", monospace';
+ctx.fillStyle='rgba(255,170,60,'+(0.6+0.4*Math.sin(t*6))+')';
+ctx.fillText(t<EV_CLOSE?'\u25BC':(t<EV_DESC?'\u25BC '+floorTxt:floorTxt),W/2,dy0-9);
+ctx.textAlign='left';
+}
+/* панель кнопок справа */
+ctx.fillStyle='rgb('+Math.round(40*M)+','+Math.round(41*M)+','+Math.round(46*M)+')';
+ctx.fillRect(dx1+8,dy0+(dy1-dy0)*0.42,10,26);
+ctx.fillStyle='rgba(255,170,60,'+(0.5+0.5*Math.sin(t*4))+')';
+ctx.fillRect(dx1+11,dy0+(dy1-dy0)*0.42+4,4,4);
+ctx.fillStyle='rgba(120,220,160,0.8)';
+ctx.fillRect(dx1+11,dy0+(dy1-dy0)*0.42+12,4,4);
+}
+ctx.restore();
+/* зерно */
+for(let gi=0;gi<70;gi++){
 const gx=Math.random()*W,gy=Math.random()*H;
-ctx.fillStyle=Math.random()<0.5?'rgba(255,255,255,0.035)':'rgba(0,0,0,0.06)';
+ctx.fillStyle=Math.random()<0.5?'rgba(255,255,255,0.03)':'rgba(0,0,0,0.06)';
 ctx.fillRect(gx,gy,1.4,1.4);
 }
 ctx.restore();
-/* подписи — без наклона */
-if(p<0.88){
-const cA=Math.min(1,(t-tau0)/0.5)*Math.min(1,(0.95-p)/0.07);
-drawStairCaption('СПУСК ПО ЛЕСТНИЦЕ','АВАРИЙНЫЙ ШЛЮЗ ЗАКРЫТ ЗА ВАМИ · СТУПЕНЬ '+Math.min(STAIR_TOTAL_STEPS,Math.floor(d))+' / '+STAIR_TOTAL_STEPS,cA);
-}else{
-const cA=Math.min(1,(p-0.88)/0.06);
-drawStairCaption('СЛЕДУЮЩИЙ СЕКТОР ВНИЗУ','ПРИГОТОВЬТЕСЬ',cA);
-}
+/* подписи */
+let capM=null,capS=null;
+if(t<EV_CLOSE){capM='ГРУЗОВОЙ ЛИФТ';capS='ДВЕРИ ЗАКРЫВАЮТСЯ'}
+else if(t<EV_DESC){capM='ГРУЗОВОЙ ЛИФТ';capS='ЭТАЖ '+floorTxt}
+else if(t<EV_OPEN){capM='НИЖНИЙ УРОВЕНЬ';capS='ДВЕРИ ОТКРЫВАЮТСЯ'}
+else if(t<EV_EXIT){capM='ТЕХНИЧЕСКИЙ КОРИДОР';capS='ВПЕРЕДИ ПРОЁМ В ПОЛУ'}
+else{capM='ПРЫЖОК В ЯМУ';capS='СЛЕДУЮЩИЙ СЕКТОР ВНИЗУ'}
+const cA=Math.min(1,(t-EV0)/0.4);
+drawStairCaption(capM,capS,cA);
 }
 function drawWinSequence(){const t=G.winTimer;const approachP=Math.max(0,Math.min(1,t/WIN_APPROACH_END));const doorP=Math.max(0,Math.min(1,(t-WIN_APPROACH_END)/(WIN_DOOR_OPEN_END-WIN_APPROACH_END)));const lightP=Math.max(0,Math.min(1,(t-WIN_DOOR_OPEN_END)/(WIN_LIGHT_END-WIN_DOOR_OPEN_END)));const blackP=Math.max(0,Math.min(1,(t-WIN_LIGHT_END)/(WIN_BLACK_END-WIN_LIGHT_END)));const s=canvas.width/W;ctx.save();ctx.scale(s,s);let sx=0;if(approachP>0&&approachP<1)sx=Math.sin(t*40)*1.5*(1-approachP);ctx.translate(sx,0);
 if(t<WIN_BLACK_END+0.3){
 if(doorP>0){const pos=getDoorScreenPos();if(pos&&isFinite(pos.x)&&isFinite(pos.y)&&pos.h>0){const openW=pos.w*(1-doorP*0.92);const doorGrad=ctx.createRadialGradient(pos.x,pos.y,0,pos.x,pos.y,pos.h*1.2);const intensity=0.6+doorP*0.4;doorGrad.addColorStop(0,'rgba(255, 250, 220, '+intensity+')');doorGrad.addColorStop(0.3,'rgba(255, 240, 180, '+(intensity*0.8)+')');doorGrad.addColorStop(0.7,'rgba(255, 220, 140, '+(intensity*0.3)+')');doorGrad.addColorStop(1,'rgba(255, 200, 100, 0)');ctx.imageSmoothingEnabled=true;ctx.fillStyle=doorGrad;ctx.fillRect(pos.x-pos.h*1.2,pos.y-pos.h*1.2,pos.h*2.4,pos.h*2.4);ctx.fillStyle='rgba(255, 255, 235, '+(doorP*0.95)+')';ctx.fillRect(pos.x-openW/2,pos.y,openW,pos.h);if(doorP>0.5){const rayAlpha=(doorP-0.5)*2;ctx.strokeStyle='rgba(255, 245, 200, '+(rayAlpha*0.5)+')';ctx.lineWidth=2;for(let i=0;i<8;i++){const ang=(i/8)*Math.PI*2+t*1.5;const len=pos.h*0.7;ctx.beginPath();ctx.moveTo(pos.x,pos.y+pos.h*0.5);ctx.lineTo(pos.x+Math.cos(ang)*len,pos.y+pos.h*0.5+Math.sin(ang)*len);ctx.stroke()}}}}
 if(lightP>0){const dim=1-blackP;const centerP=Math.min(1,lightP*1.5)*dim;const warmGrad=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*0.9);warmGrad.addColorStop(0,'rgba(255, 240, 200, '+(centerP*0.9)+')');warmGrad.addColorStop(0.5,'rgba(255, 220, 160, '+(centerP*0.5)+')');warmGrad.addColorStop(1,'rgba(255, 200, 120, 0)');ctx.fillStyle=warmGrad;ctx.fillRect(0,0,W,H);const whiteP=Math.max(0,(lightP-0.4)/0.6)*dim;if(whiteP>0){ctx.fillStyle='rgba(255, 255, 255, '+(whiteP*whiteP)+')';ctx.fillRect(0,0,W,H)}}
 }
-if(blackP>0&&t<WIN_STAIRS_END+0.5){ctx.fillStyle='rgba(0,0,0,'+blackP+')';ctx.fillRect(-40,-40,W+80,H+80)}
-if(t>=WIN_BLACK_END){drawStairDescent(t)}
-if(t>=WIN_STAIRS_END){const q=Math.max(0,Math.min(1,(t-WIN_STAIRS_END)/(WIN_TOTAL-WIN_STAIRS_END)));const wg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*0.9);wg.addColorStop(0,'rgba(255,240,200,'+(q*0.85)+')');wg.addColorStop(1,'rgba(255,200,120,0)');ctx.fillStyle=wg;ctx.fillRect(0,0,W,H);const wp=Math.max(0,(q-0.35)/0.65);if(wp>0){ctx.fillStyle='rgba(255,255,255,'+(wp*wp)+')';ctx.fillRect(0,0,W,H)}}
+if(blackP>0&&t<WIN_LIFT_END+0.5){ctx.fillStyle='rgba(0,0,0,'+blackP+')';ctx.fillRect(-40,-40,W+80,H+80)}
+if(t>=WIN_BLACK_END){drawElevatorSequence(t)}
+if(t>=WIN_LIFT_END){const q=Math.max(0,Math.min(1,(t-WIN_LIFT_END)/(WIN_TOTAL-WIN_LIFT_END)));const wg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*0.9);wg.addColorStop(0,'rgba(255,240,200,'+(q*0.85)+')');wg.addColorStop(1,'rgba(255,200,120,0)');ctx.fillStyle=wg;ctx.fillRect(0,0,W,H);const wp=Math.max(0,(q-0.35)/0.65);if(wp>0){ctx.fillStyle='rgba(255,255,255,'+(wp*wp)+')';ctx.fillRect(0,0,W,H)}}
 ctx.restore()}
 function getDoorScreenPos(){const px=G.px,py=G.py;const dirX=G.dirX,dirY=G.dirY;const planeX=G.planeX,planeY=G.planeY;const invDet=1.0/(planeX*dirY-dirX*planeY);const spriteX=G.door.x-px;const spriteY=G.door.y-py;const transformX=invDet*(dirY*spriteX-dirX*spriteY);const transformY=invDet*(-planeY*spriteX+planeX*spriteY);if(transformY<0.2)return null;const spriteScreenX=(W/2)*(1+transformX/transformY);const lineH=H/transformY;const horizon=HORIZON_BASE+G.pitch;const bottom=horizon+lineH*0.5;const spriteH=lineH*1.0;const spriteW=spriteH*0.9;return{x:spriteScreenX,y:bottom-spriteH,w:spriteW,h:spriteH,bottom}}
 function drawMinimap(){if(!G.showMap||!G.explored)return;const cfg=G.cfg;const mCell=cfg.mazeW<=20?5:(cfg.mazeW<=31?4:3);const mw=G.MW*mCell;const mh=G.MH*mCell;const headerH=14;const footerH=11;const pad=6;const frameX=12;const frameY=20;const frameW=mw+pad*2;const frameH=headerH+pad+mh+pad+footerH;const ox=frameX+pad;const oy=frameY+headerH+pad;ctx.fillStyle='rgba(3, 8, 10, 0.93)';ctx.fillRect(frameX,frameY,frameW,frameH);ctx.strokeStyle='rgba(60, 140, 140, 0.32)';ctx.lineWidth=1;ctx.strokeRect(frameX+0.5,frameY+0.5,frameW-1,frameH-1);const bL=8;const cornerColor=G.devMode?'rgba(95, 225, 140, 0.85)':'rgba(95, 225, 200, 0.78)';ctx.strokeStyle=cornerColor;ctx.beginPath();ctx.moveTo(frameX,frameY+bL);ctx.lineTo(frameX,frameY);ctx.lineTo(frameX+bL,frameY);ctx.moveTo(frameX+frameW-bL,frameY);ctx.lineTo(frameX+frameW,frameY);ctx.lineTo(frameX+frameW,frameY+bL);ctx.moveTo(frameX,frameY+frameH-bL);ctx.lineTo(frameX,frameY+frameH);ctx.lineTo(frameX+bL,frameY+frameH);ctx.moveTo(frameX+frameW-bL,frameY+frameH);ctx.lineTo(frameX+frameW,frameY+frameH);ctx.lineTo(frameX+frameW,frameY+frameH-bL);ctx.stroke();ctx.font='bold 7px "Courier New", monospace';ctx.textBaseline='top';ctx.textAlign='left';ctx.fillStyle=G.devMode?'rgba(95, 225, 140, 0.95)':'rgba(95, 225, 200, 0.9)';ctx.fillText('▣ СКАНЕР',frameX+7,frameY+4);ctx.textAlign='right';if(G.devMode){ctx.fillStyle='rgba(95, 225, 140, 0.9)';ctx.fillText(cfg.code+' · DEV',frameX+frameW-7,frameY+4)}else{ctx.fillStyle='rgba(170, 190, 190, 0.6)';const mode=cfg.exploreLOS?'ЛУЧ':'ОБЗ';ctx.fillText(cfg.code+' · '+mode,frameX+frameW-7,frameY+4)}for(let y=0;y<G.MH;y++){const rowE=G.explored[y];const rowM=G.map[y];for(let x=0;x<G.MW;x++){if(!G.devMode&&!rowE[x])continue;const t=rowM[x];const cx=ox+x*mCell;const cy=oy+y*mCell;if(t===TILE_DOOR){const p=0.7+0.3*Math.sin(G.time*4.5);ctx.fillStyle='rgba(95, 240, 140, '+p+')'}else if(t===TILE_BREAK){ctx.fillStyle='rgba(200, 150, 80, 0.85)'}else if(t===0){ctx.fillStyle='rgba(38, 60, 64, 0.85)'}else{ctx.fillStyle='rgba(115, 155, 155, 0.7)'}ctx.fillRect(cx,cy,mCell-0.6,mCell-0.6)}}for(const d of G.decals){const cx=ox+d.x*mCell;const cy=oy+d.y*mCell;ctx.fillStyle='rgba(115, 6, 12, 0.85)';ctx.fillRect(cx-1.5,cy-1.5,3,3)}for(const sp of G.sprites){if(!sp.alive)continue;const cxi=sp.x|0,cyi=sp.y|0;if(!G.devMode&&(!G.explored[cyi]||!G.explored[cyi][cxi]))continue;const cx=ox+cxi*mCell+mCell*0.5;const cy=oy+cyi*mCell+mCell*0.5;const p=0.55+0.45*Math.sin(G.time*4.5+(sp.phase||0));if(sp.type==='fuse'){ctx.fillStyle='rgba(255, 140, 70, '+p+')';ctx.beginPath();ctx.arc(cx,cy,mCell*0.42,0,Math.PI*2);ctx.fill()}else if(sp.type==='battery'){ctx.fillStyle='rgba(80, 240, 130, '+p+')';ctx.beginPath();ctx.arc(cx,cy,mCell*0.34,0,Math.PI*2);ctx.fill()}}if(!cfg.tutorial){const mdist=Math.hypot(G.px-G.monster.x,G.py-G.monster.y);if(G.devMode||mdist<9){const alpha=G.devMode?1:Math.max(0.25,1-mdist/10);const cx=ox+G.monster.x*mCell;const cy=oy+G.monster.y*mCell;const stunned=G.monster.stunTimer>0;const searching=G.monster.state==='search';const raging=G.monster.rageActive;const pulse=0.5+0.5*Math.sin(G.time*(stunned?3:(raging?12:7)));const radius=mCell*0.42+pulse*(raging?3:2);let col=stunned?'95, 216, 216':(raging?'255, 30, 30':(searching?'230, 160, 60':'255, 60, 60'));ctx.strokeStyle='rgba('+col+', '+alpha+')';ctx.fillStyle='rgba('+col+', '+(alpha*0.30)+')';ctx.lineWidth=1;ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);ctx.fill();ctx.stroke()}}const pxc=ox+G.px*mCell;const pyc=oy+G.py*mCell;const yaw=Math.atan2(G.dirY,G.dirX);ctx.save();ctx.globalAlpha=0.22;const coneR=Math.min(30,cfg.exploreRadius*mCell*0.75);const grad=ctx.createRadialGradient(pxc,pyc,0,pxc,pyc,coneR);grad.addColorStop(0,'rgba(150, 240, 220, 0.9)');grad.addColorStop(1,'rgba(150, 240, 220, 0)');ctx.fillStyle=grad;ctx.beginPath();ctx.moveTo(pxc,pyc);ctx.arc(pxc,pyc,coneR,yaw-0.55,yaw+0.55);ctx.closePath();ctx.fill();ctx.restore();const tipLen=5,backLen=3.4,sideW=3.2;const tx=pxc+G.dirX*tipLen;const ty=pyc+G.dirY*tipLen;const blx=pxc-G.dirX*backLen-G.dirY*sideW;const bly=pyc-G.dirY*backLen+G.dirX*sideW;const brx=pxc-G.dirX*backLen+G.dirY*sideW;const bry=pyc-G.dirY*backLen-G.dirX*sideW;ctx.fillStyle='rgba(240, 250, 250, 0.98)';ctx.strokeStyle='rgba(120, 240, 220, 0.95)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(tx,ty);ctx.lineTo(blx,bly);ctx.lineTo(brx,bry);ctx.closePath();ctx.fill();ctx.stroke();ctx.font='6px "Courier New", monospace';ctx.fillStyle='rgba(95, 200, 190, 0.6)';ctx.textAlign='left';ctx.fillText('X'+Math.floor(G.px)+'·Y'+Math.floor(G.py),frameX+7,frameY+frameH-8);ctx.textAlign='right';ctx.fillStyle='rgba(140, 160, 165, 0.55)';ctx.fillText('M',frameX+frameW-7,frameY+frameH-8);ctx.textAlign='left';ctx.textBaseline='alphabetic'}
@@ -614,21 +646,17 @@ let lastTime=performance.now();
 function loop(now){const dt=Math.min(0.05,(now-lastTime)/1000);lastTime=now;try{if(G.state==='playing'){update(dt);render();present();drawHUD()}else if(G.state==='opening'){updateOpening(dt);render();present();drawHUD()}else if(G.state==='dying'){updateDying(dt);render();present();drawHUD()}else if(G.state==='winning'){updateWinning(dt);render();present()}else if(G.state==='transition'){G.transitionTimer+=dt;if(G.transitionTimer>1.6){hideEndlessTransition();startEndlessFloor(G.endlessFloor+1);lastTime=performance.now()}}else if(G.state==='paused'){render();present();drawHUD();const s=canvas.height/H;ctx.save();ctx.scale(s,s);ctx.fillStyle='rgba(0,0,0,0.72)';ctx.fillRect(0,0,W,H);ctx.restore()}}catch(err){console.error('Ошибка в игровом цикле:',err)}requestAnimationFrame(loop)}
 function die(){if(G.state!=='playing')return;G.state='dying';G.deathTimer=0;G.knifeHitsPlayed=0;Snd.death();G.shake=1.8;G.redTint=1;G.bloodSplatters=[];for(let i=0;i<SCARE_BLOOD_COUNT;i++){G.bloodSplatters.push({nx:0.15+Math.random()*0.7,ny:0.1+Math.random()*0.75,size:130+Math.random()*170,canvas:makeBloodSplatterCanvas(160+Math.floor(Math.random()*60),Math.floor(Math.random()*100000))})}document.exitPointerLock&&document.exitPointerLock()}
 function updateDying(dt){G.deathTimer+=dt;G.shake=Math.max(0,G.shake-dt*1.2);G.redTint=Math.min(1.4,G.redTint+dt*1.6);G.fear=1;const M=G.monster;if(G.deathTimer<SCARE_TURN_END){if(G.deathTimer<0.4){const dm=Math.hypot(G.px-M.x,G.py-M.y);if(dm<2.5){const nx=(G.px-M.x)/Math.max(dm,0.001);const ny=(G.py-M.y)/Math.max(dm,0.001);M.x-=nx*3.0*dt;M.y-=ny*3.0*dt}}const targetYaw=Math.atan2(M.y-G.py,M.x-G.px);let diff=targetYaw-G.yaw;while(diff>Math.PI)diff-=Math.PI*2;while(diff<-Math.PI)diff+=Math.PI*2;G.yaw+=Math.sign(diff)*Math.min(Math.abs(diff),5.0*dt);const targetPitch=42;G.pitch+=(targetPitch-G.pitch)*Math.min(1,dt*4);if(G.yaw>Math.PI*2)G.yaw-=Math.PI*2;if(G.yaw<0)G.yaw+=Math.PI*2;updateVectors()}while(G.knifeHitsPlayed<SCARE_BLOOD_COUNT&&G.deathTimer>=SCARE_BLOOD_START+G.knifeHitsPlayed*SCARE_BLOOD_INTERVAL){Snd.knifeHit();G.knifeHitsPlayed++;G.shake=Math.max(G.shake,1.2)}if(G.deathTimer>SCARE_TOTAL){G.state='dead';showDead()}}
-function startWinAnimation(){if(G.state!=='playing'&&G.state!=='opening')return;G.state='winning';G.winTimer=0;G.winMechanismPlayed=false;G.winFloodPlayed=false;G.winStairStep=-1;G.winClosePlayed=false;G.winBangTimes=[1.4,3.0,4.7];G.winBangPlayed=[false,false,false];G.winStartX=G.px;G.winStartY=G.py;const dx=G.door.x-G.px,dy=G.door.y-G.py;const len=Math.hypot(dx,dy)||1;G.winTargetX=G.door.x-(dx/len)*0.9;G.winTargetY=G.door.y-(dy/len)*0.9;document.exitPointerLock&&document.exitPointerLock()}
+function startWinAnimation(){if(G.state!=='playing'&&G.state!=='opening')return;G.state='winning';G.winTimer=0;G.winMechanismPlayed=false;G.winFloodPlayed=false;G.winClosePlayed=false;G.winBangTimes=[1.2,2.3,3.2];G.winBangPlayed=[false,false,false];G.winStartX=G.px;G.winStartY=G.py;const dx=G.door.x-G.px,dy=G.door.y-G.py;const len=Math.hypot(dx,dy)||1;G.winTargetX=G.door.x-(dx/len)*0.9;G.winTargetY=G.door.y-(dy/len)*0.9;document.exitPointerLock&&document.exitPointerLock()}
 function updateWinning(dt){G.winTimer+=dt;const t=G.winTimer;if(t<WIN_APPROACH_END){const p=t/WIN_APPROACH_END;const targetYaw=Math.atan2(G.door.y-G.py,G.door.x-G.px);let diff=targetYaw-G.yaw;while(diff>Math.PI)diff-=Math.PI*2;while(diff<-Math.PI)diff+=Math.PI*2;G.yaw+=Math.sign(diff)*Math.min(Math.abs(diff),5.0*dt);if(G.yaw>Math.PI*2)G.yaw-=Math.PI*2;if(G.yaw<0)G.yaw+=Math.PI*2;const eased=p*p*(3-2*p);G.px=G.winStartX+(G.winTargetX-G.winStartX)*eased;G.py=G.winStartY+(G.winTargetY-G.winStartY)*eased;G.pitch=8*Math.sin(p*Math.PI);updateVectors()}
 /* вход в шлюз: лязг закрывшейся двери за спиной */
 if(t>=WIN_LIGHT_END+0.35&&!G.winClosePlayed){G.winClosePlayed=true;Snd.airlockClose();G.shake=Math.max(G.shake,0.5)}
 /* фаза спуска: металлические шаги по ступеням + глухие удары в закрытый шлюз */
-if(t>WIN_BLACK_END&&t<WIN_STAIRS_END){
-const sp=(t-WIN_BLACK_END)/(WIN_STAIRS_END-WIN_BLACK_END);
-const se=sp*sp*(3-2*sp);
-const di=Math.floor(STAIR_TOTAL_STEPS*se);
-if(di>G.winStairStep&&di<STAIR_TOTAL_STEPS){G.winStairStep=di;Snd.stairStep()}
-const bt=t-WIN_BLACK_END;
+if(t>4.6&&t<8.3){
+const bt=t-4.6;
 for(let bi=0;bi<G.winBangTimes.length;bi++){if(!G.winBangPlayed[bi]&&bt>=G.winBangTimes[bi]){G.winBangPlayed[bi]=true;Snd.muffledBang();G.shake=Math.max(G.shake,0.35)}}
 G.pitch+=(0-G.pitch)*Math.min(1,dt*3);
 }
-if(t>=WIN_DOOR_OPEN_END-0.4&&!G.winFloodPlayed){G.winFloodPlayed=true;Snd.flood()}
+if(t>=WIN_LIFT_END-1.5&&!G.winFloodPlayed){G.winFloodPlayed=true;Snd.flood()}
 if(t>WIN_TOTAL){if(G.mode==='endless'){G.state='transition';G.transitionTimer=0;showEndlessTransition(G.endlessFloor+1)}else{G.state='won';showWin()}}}
 const etScreen=document.getElementById('endlessScreen');const etFloor=document.getElementById('etFloor');const etSub=document.getElementById('etSub');
 function showEndlessTransition(nextFloor){etFloor.textContent='ЭТАЖ '+nextFloor;etSub.textContent='· ГЛУБЖЕ ·';etScreen.classList.add('show')}
