@@ -1,0 +1,17 @@
+# Godot-generated cache; never needed to open the project.
+.godot/
+.import/
+export.cfg
+export_credentials.cfg
+*.tmp
+
+# Exports, previews and local tooling.
+.web/
+dist/
+*.exe
+artifacts/
+node_modules/
+.cache/
+__pycache__/
+*.log
+.DS_Store

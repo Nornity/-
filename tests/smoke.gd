@@ -1,0 +1,326 @@
+extends RefCounted
+## Run: godot --headless --path . -- --smoke-test
+## Or open the development Web preview with ?test=1.
+## Tests run inside the real Godot engine, not a JavaScript reimplementation.
+
+const Maze = preload("res://scripts/maze.gd")
+const Levels = preload("res://scripts/level_config.gd")
+const Progress = preload("res://scripts/progress.gd")
+var passed: int = 0
+var failures: Array[String] = []
+
+func check(condition: bool, description: String) -> void:
+	if condition:
+		passed += 1
+	else:
+		failures.append(description)
+		print("TEST_FAILED: ", description)
+
+func frames(app, count: int = 2) -> void:
+	for i in range(count):
+		await app.get_tree().physics_frame
+
+func run(app) -> Dictionary:
+	var had_save: bool = FileAccess.file_exists(Progress.PATH)
+	var original_bytes := FileAccess.get_file_as_bytes(Progress.PATH) if had_save else PackedByteArray()
+	var original_unlocks: int = app.progress.unlocked
+	var original_best: Dictionary = app.progress.best.duplicate(true)
+	var original_endless: int = app.progress.endless_best
+	var original_settings: Dictionary = app.progress.settings.duplicate(true)
+	# The logic/physics tests do not need GPU rendering. Keep real physics active.
+	app.get_viewport().disable_3d = true
+	_test_mazes()
+	app.start_run(0, 0, 707)
+	await frames(app, 3)
+	check(app.state == "playing", "Training starts")
+	check(not is_instance_valid(app.creature), "Training is genuinely safe")
+	check(app.player.loaded_count() == 2, "Taser starts with two loaded slots")
+	app.begin_escape()
+	check(app.state == "playing", "Escape is impossible without required fuses")
+	var before: Vector3 = app.player.position
+	Input.action_press("move_forward")
+	await frames(app, 20)
+	Input.action_release("move_forward")
+	check(app.player.position.distance_to(before) > 0.15, "WASD physics moves the player")
+	app.pause_game()
+	var paused_time: float = app.elapsed
+	var paused_battery: float = app.player.battery
+	var paused_position: Vector3 = app.player.position
+	await frames(app, 5)
+	check(app.elapsed == paused_time, "Pause freezes the session timer")
+	check(app.player.battery == paused_battery, "Pause freezes battery drain")
+	check(app.player.position == paused_position, "Pause freezes physics movement")
+	app.resume_game()
+	check(app.player.active and app.world.playing, "Resume restores gameplay")
+	app.player.toggle_crouch()
+	check(app.player.crouching and app.player.collision.shape.height < 1.2, "Crouch lowers collision capsule")
+	app.player.toggle_crouch()
+	check(app.player.fire(), "A loaded taser can fire")
+	check(app.player.loaded_count() == 1, "A shot spends exactly one charge")
+	check(not app.player.fire(), "Shot cooldown prevents spam")
+	var reserves: int = app.player.reserves
+	check(app.player.reload_taser(), "Reload starts with a spare battery")
+	check(app.player.reserves == reserves - 1, "Reload spends exactly one spare")
+	check(not app.player.reload_taser(), "Reload animation cannot double-spend batteries")
+	app.player.tick_resources(float(app.config.recharge) + 0.2)
+	check(app.player.loaded_count() == 2, "A depleted slot recharges to ready")
+	app.player.battery = 4
+	app.player.reserves = 1
+	app.player.tick_resources(0.1)
+	check(app.player.battery == 100 and app.player.reserves == 0, "Automatic battery replacement is atomic")
+	app.player.battery = 0
+	app.player.tick_resources(0.1)
+	check(not app.player.flashlight, "Empty flashlight switches off")
+	app.player.battery = 100
+	app.player.reserves = 2
+	app.player.flashlight = true
+	app.perform_action("map")
+	check(app.map_visible, "Map toggles on")
+	app.perform_action("map")
+	check(not app.map_visible, "Map toggles off")
+	_test_touch(app)
+	var rock_count: int = app.player.rocks
+	app.perform_action("rock")
+	check(app.player.rocks == rock_count - 1 and app.thrown.size() == 1, "Throw consumes one rock and creates a projectile")
+	app._update_rocks(0.8)
+	check(app.thrown[0].landed, "Rock reaches an impact point")
+	app._update_rocks(6.0)
+	check(app.thrown.is_empty(), "Old rock projectiles are removed")
+	# Use the same reach/line-of-sight checks as the E key.
+	for item in app.world.items:
+		if item.kind != "fuse":
+			continue
+		app.player.global_position = item.root.global_position + Vector3(0, 0.03, 0.95)
+		app.player.velocity = Vector3.ZERO
+		app.player.camera.look_at(item.root.global_position + Vector3(0, 0.9, 0))
+		app._interact()
+		check(item.taken, "Reachable fuse can be picked up through E interaction")
+		check(not app.world.take_item(item), "A fuse cannot be collected twice")
+	check(app.fuses == int(app.config.fuses), "Every training fuse is collectable")
+	app.begin_escape()
+	check(app.state == "opening", "Complete objective opens the airlock")
+	app._update_escape(2.9)
+	check(app.elevator_built, "Escape builds the 3D elevator sequence")
+	app._update_escape(4.0)
+	app._update_escape(1.3)
+	check(app.state == "result", "Escape reaches the result screen")
+	check(app.progress.best.has("0"), "Training completion records a best time")
+	# Campaign AI and combat, using adjacent reachable cells.
+	app.start_run(1, 0, 901)
+	await frames(app, 3)
+	var creature = app.creature
+	creature.awake_time = 10
+	var center: Vector2i = Maze.to_cell(creature.position)
+	var neighbor: Vector2i = center
+	for direction in Maze.DIRECTIONS:
+		if app.world.maze.is_open(center + direction):
+			neighbor = center + direction
+			break
+	app.player.position = Maze.to_world(neighbor, 0.03)
+	app.player.camera.look_at(creature.global_position + Vector3(0, 1.3, 0))
+	creature.rotation.y = atan2(-(app.player.position.x - creature.position.x), -(app.player.position.z - creature.position.z))
+	creature.state = "patrol"
+	creature._sense_player()
+	check(creature.state == "patrol", "Blind creature does not see a stationary lit player")
+	check(not creature.hear_noise(app.player.position, 1.7), "Crouched footsteps have a much shorter hearing radius")
+	check(creature.hear_noise(app.player.position, 18), "Running can be heard in a connected corridor")
+	check(creature.state == "chase", "A close detected sound starts a chase")
+	app._fire_taser()
+	check(creature.state == "stunned" and creature.stun_time > 5.9, "Aimed taser stuns a visible creature")
+	check(not creature.hear_noise(app.player.position, 40), "Stunned creature cannot react to a distraction")
+	creature.stun_time = 0
+	creature.state = "patrol"
+	creature.memory = 0
+	check(creature.hear_noise(app.player.position, 27, false), "Rock impact is a valid distraction")
+	check(creature.state == "investigate" and creature.target == neighbor, "Creature investigates the sound location, not omniscient player tracking")
+	creature.config = creature.config.duplicate(true)
+	creature.config.type = "watcher"
+	creature.state = "patrol"
+	creature._sense_player()
+	check(creature.state == "chase", "Sighted creature detects a visible player")
+	# A solid wall must block line of sight and taser hits.
+	var occlusion_pair: Array[Vector2i] = []
+	for y in range(1, app.world.maze.width - 1):
+		for x in range(1, app.world.maze.width - 1):
+			var c := Vector2i(x, y)
+			if app.world.maze.is_open(c):
+				continue
+			for direction in [Vector2i.RIGHT, Vector2i.DOWN]:
+				if app.world.maze.is_open(c + direction) and app.world.maze.is_open(c - direction):
+					occlusion_pair = [c + direction, c - direction]
+					break
+			if not occlusion_pair.is_empty():
+				break
+		if not occlusion_pair.is_empty():
+			break
+	check(not occlusion_pair.is_empty(), "Occlusion test has a real separating wall")
+	if not occlusion_pair.is_empty():
+		app.player.position = Maze.to_world(occlusion_pair[0], 0.03)
+		creature.position = Maze.to_world(occlusion_pair[1], 0.03)
+		app.player.camera.look_at(creature.position + Vector3(0, 1.3, 0))
+		check(not app.world.line_of_sight(app.player.camera.global_position, creature.position + Vector3(0, 1.3, 0)), "Walls block line of sight")
+		app.player.shot_cooldown = 0
+		app.player.slots[0] = 0
+		creature.state = "patrol"
+		app._fire_taser()
+		check(creature.state != "stunned", "Taser cannot stun through walls")
+	app.pause_game()
+	var enemy_position: Vector3 = creature.position
+	await frames(app, 3)
+	check(creature.position == enemy_position and not creature.active, "Pause also freezes the enemy")
+	app.resume_game()
+	app.die()
+	check(app.state == "dying" and not app.player.active, "Capture disables player input")
+	app._update_death(2.3)
+	check(app.state == "result", "Capture has a retry result screen")
+	app.start_run(1, 0, 901)
+	await frames(app, 2)
+	check(app.fuses == 0 and app.player.loaded_count() == 2 and app.elapsed < 1, "Retry resets inventory, objective and session state")
+	# Progression is awarded only on completion.
+	app.fuses = int(app.config.fuses)
+	app.elapsed = 93
+	app._finish_escape()
+	check(app.progress.unlocked >= 2, "Winning B3 unlocks B4")
+	app.start_run(2, 0, 1001)
+	await frames(app, 2)
+	check(app.world.breakables.size() > 0, "B4 contains breakable partitions")
+	var broken: Vector2i = app.world.maze.breakable_cells[0]
+	check(app.world.break_wall(broken), "Partition breaks once")
+	check(app.world.maze.is_open(broken), "Broken wall immediately updates authoritative navigation grid")
+	check(not app.world.break_wall(broken), "A partition cannot spawn infinite batteries")
+	app.start_run(3, 0, 1002)
+	await frames(app, 2)
+	check(not bool(app.config.compass) and int(app.config.fuses) == 5, "B5 has its own difficulty and disabled compass")
+	check(app.player.slots.size() == 1, "Deeper sectors reduce taser capacity")
+	app.start_run(-1, 1, 1003)
+	await frames(app, 2)
+	app.fuses = int(app.config.fuses)
+	app._finish_escape()
+	check(app.endless_floor == 2 and app.state == "playing", "Endless completion advances to a fresh floor")
+	check(app.fuses == 0 and app.progress.endless_best >= 1, "Endless record counts completed floors and inventory resets")
+	# Save/load round trip, then restore the user's original file byte-for-byte.
+	app.progress.settings.volume = 0.35
+	app.progress.save_progress()
+	var roundtrip = Progress.new()
+	roundtrip.load_progress()
+	check(is_equal_approx(roundtrip.settings.volume, 0.35), "Volume preference survives save/load")
+	check(roundtrip.unlocked == app.progress.unlocked, "Unlocks survive save/load")
+	check(roundtrip.best.has("1"), "Sector records survive save/load")
+	app.return_to_menu()
+	app.progress.unlocked = original_unlocks
+	app.progress.best = original_best
+	app.progress.endless_best = original_endless
+	app.progress.settings = original_settings
+	if had_save:
+		var file := FileAccess.open(Progress.PATH, FileAccess.WRITE)
+		file.store_buffer(original_bytes)
+		file.close()
+	else:
+		DirAccess.remove_absolute(Progress.PATH)
+	app._apply_preferences()
+	app.ui.refresh_sector()
+	app.get_viewport().disable_3d = false
+	return {"passed": passed, "failed": failures.size(), "failures": failures, "engine": Engine.get_version_info().string}
+
+func _test_mazes() -> void:
+	for sector in range(4):
+		var cfg: Dictionary = Levels.sector(sector)
+		for map_seed in range(1, 17):
+			var maze = Maze.new()
+			maze.generate(cfg, map_seed)
+			var distances: PackedInt32Array = maze.distances_from(maze.spawn)
+			check(maze.width % 2 == 1, "Maze dimensions stay odd")
+			var connected: bool = true
+			for cell in maze.floor_cells:
+				if distances[cell.y * maze.width + cell.x] < 0:
+					connected = false
+			check(connected, "Every floor tile is connected: sector=%d seed=%d" % [sector, map_seed])
+			var perimeter_closed: bool = true
+			for i in range(maze.width):
+				for cell in [Vector2i(i, 0), Vector2i(0, i), Vector2i(i, maze.width - 1), Vector2i(maze.width - 1, i)]:
+					perimeter_closed = perimeter_closed and not maze.is_open(cell)
+			check(perimeter_closed, "Outer walls never have gaps")
+			var used: Dictionary = {maze.spawn: true, maze.exit_cell: true, maze.enemy_cell: true}
+			var unique: bool = used.size() == 3
+			var reachable: bool = true
+			for cell in maze.fuse_cells + maze.battery_cells:
+				unique = unique and not used.has(cell)
+				used[cell] = true
+				reachable = reachable and maze.is_open(cell) and distances[cell.y * maze.width + cell.x] >= 0
+			check(unique, "Items and spawn points do not overlap")
+			check(reachable, "All required pickups are reachable")
+			check(maze.fuse_cells.size() == int(cfg.fuses), "Exact required fuse count")
+			check(maze.battery_cells.size() == int(cfg.batteries), "Exact spare battery count")
+			var path: Array[Vector2i] = maze.find_path(maze.spawn, maze.exit_cell)
+			check(not path.is_empty() and path.back() == maze.exit_cell, "The airlock is reachable without deleting a corridor")
+			var valid_path: bool = true
+			var previous: Vector2i = maze.spawn
+			for cell in path:
+				valid_path = valid_path and maze.is_open(cell) and absi(cell.x - previous.x) + absi(cell.y - previous.y) == 1
+				previous = cell
+			check(valid_path, "Enemy path is contiguous and never crosses a wall")
+			check(maze.find_path(maze.spawn, Vector2i.ZERO).is_empty(), "Pathfinding safely rejects a wall goal")
+			var twin = Maze.new()
+			twin.generate(cfg, map_seed)
+			check(twin.cells == maze.cells and twin.fuse_cells == maze.fuse_cells, "A seed reproduces layout and item positions")
+	for floor_number in [1, 2, 3, 8, 20, 60]:
+		var cfg: Dictionary = Levels.endless(floor_number)
+		var maze = Maze.new()
+		maze.generate(cfg, 707)
+		check(maze.fuse_cells.size() == int(cfg.fuses), "Endless floors remain playable as difficulty grows")
+		check(maze.width <= 29 and float(cfg.chase) < 4.65, "Endless difficulty has fair bounds")
+
+func _test_touch(app) -> void:
+	var controls = app.ui.touch
+	var was_enabled: bool = app.touch_enabled
+	app.touch_enabled = true
+	controls.show()
+	_touch(controls, 0, Vector2(135, 569), true)
+	var drag := InputEventScreenDrag.new()
+	drag.index = 0
+	drag.position = controls.get_global_transform_with_canvas() * Vector2(135, 509)
+	drag.relative = Vector2(0, -60)
+	controls._input(drag)
+	check(app.player.touch_move.y < -0.8, "Touch stick moves forward")
+	_touch(controls, 1, Vector2(266, 588), true)
+	check(app.player.touch_sprint, "A second finger can hold sprint")
+	_touch(controls, 2, Vector2(650, 360), true)
+	drag.index = 2
+	drag.relative = Vector2(22, -7)
+	var look_before: Vector2 = app.player.mouse_buffer
+	controls._input(drag)
+	check(app.player.mouse_buffer != look_before, "A third finger can look while moving")
+	_touch(controls, 2, Vector2(650, 360), false)
+	check(controls.look_id == -1 and controls.move_id == 0, "Releasing look does not release movement")
+	_touch(controls, 1, Vector2(266, 588), false)
+	check(not app.player.touch_sprint and app.player.touch_move.length() > 0, "Releasing sprint leaves movement active")
+	_touch(controls, 0, Vector2(135, 509), false)
+	check(app.player.touch_move == Vector2.ZERO, "Touch release stops the joystick")
+	_touch(controls, 3, Vector2(1057, 463), true)
+	check(app.map_visible, "Touch map button uses the real map action")
+	_touch(controls, 3, Vector2(1057, 463), false)
+	_touch(controls, 3, Vector2(1057, 463), true)
+	_touch(controls, 3, Vector2(1057, 463), false)
+	var flashlight_before: bool = app.player.flashlight
+	_touch(controls, 4, Vector2(1148, 463), true)
+	check(app.player.flashlight != flashlight_before, "Touch flashlight button works")
+	_touch(controls, 4, Vector2(1148, 463), false)
+	_touch(controls, 4, Vector2(1148, 463), true)
+	_touch(controls, 4, Vector2(1148, 463), false)
+	_touch(controls, 0, Vector2(135, 509), true)
+	_touch(controls, 1, Vector2(266, 588), true)
+	_touch(controls, 5, Vector2(1201, 112), true)
+	check(app.state == "paused" and not controls.visible, "Touch pause opens native settings")
+	check(app.player.touch_move == Vector2.ZERO and not app.player.touch_sprint, "Pause cancels every held touch")
+	check(controls.move_id == -1 and controls.look_id == -1 and controls.held.is_empty(), "Pause clears finger ownership")
+	app.resume_game()
+	app.player.mouse_buffer = Vector2.ZERO
+	app.touch_enabled = was_enabled
+	controls.visible = was_enabled
+
+func _touch(controls, id: int, position: Vector2, pressed: bool) -> void:
+	var event := InputEventScreenTouch.new()
+	event.index = id
+	event.position = controls.get_global_transform_with_canvas() * position
+	event.pressed = pressed
+	controls._input(event)

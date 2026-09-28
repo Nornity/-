@@ -1,0 +1,132 @@
+; Нижний уровень — Godot 4.5+
+; Open this file in Godot, then press F6 on scenes/main.tscn or F5.
+config_version=5
+
+[application]
+config/name="Нижний уровень"
+config/description="Атмосферный ретро-хоррор от первого лица. Объект 07."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.5", "GL Compatibility")
+config/icon="res://assets/icon.svg"
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=0
+
+[rendering]
+scaling_3d/scale=0.7
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
+textures/canvas_textures/default_texture_filter=1
+anti_aliasing/quality/msaa_3d=0
+environment/defaults/default_clear_color=Color(0.012, 0.016, 0.019, 1)
+lights_and_shadows/directional_shadow/size=1024
+lights_and_shadows/positional_shadow/atlas_size=1024
+
+[audio]
+driver/enable_input=false
+
+[physics]
+common/physics_ticks_per_second=60
+
+[layer_names]
+3d_physics/layer_1="World"
+3d_physics/layer_2="Player"
+3d_physics/layer_3="Creature"
+
+[debug]
+gdscript/warnings/untyped_declaration=0
+gdscript/warnings/inferred_declaration=0
+
+[input]
+
+move_forward={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":87), Object(InputEventKey,"physical_keycode":4194320)]
+}
+
+move_back={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":83), Object(InputEventKey,"physical_keycode":4194322)]
+}
+
+move_left={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":65)]
+}
+
+move_right={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":68)]
+}
+
+turn_left={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":4194319)]
+}
+
+turn_right={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":4194321)]
+}
+
+sprint={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":4194325)]
+}
+
+crouch={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":67)]
+}
+
+flashlight={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":70)]
+}
+
+interact={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":69)]
+}
+
+fire={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":32), Object(InputEventMouseButton,"button_index":1)]
+}
+
+reload={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":82)]
+}
+
+rock={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":81)]
+}
+
+map={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":77)]
+}
+
+pause={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":4194305)]
+}
+
+help={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":72)]
+}
+
+fullscreen={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":4194342)]
+}

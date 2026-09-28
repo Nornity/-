@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/creature.gd" id="1_ai"]
+[sub_resource type="CapsuleShape3D" id="Body"]
+radius = 0.27
+height = 1.95
+
+[node name="Creature" type="CharacterBody3D"]
+collision_layer = 4
+collision_mask = 1
+floor_snap_length = 0.15
+script = ExtResource("1_ai")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.98, 0)
+shape = SubResource("Body")
