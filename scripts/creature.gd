@@ -48,11 +48,17 @@ func _change_state(next: String) -> void:
 	if next == "chase":
 		sound_requested.emit("growl", global_position)
 
+func hearing_multiplier() -> float:
+	match str(config.get("type", "")):
+		"blind": return 1.35
+		"listener": return 1.65
+		"watcher": return 0.95
+	return 1.0
+
 func hear_noise(where: Vector3, radius: float, from_player: bool = true) -> bool:
 	if not active or stun_time > 0 or awake_time < 3.0:
 		return false
-	var multiplier: float = 1.25 if config.type == "blind" else (1.60 if config.type == "listener" else 0.8)
-	radius *= multiplier
+	radius *= hearing_multiplier()
 	var distance: float = global_position.distance_to(where)
 	if distance > radius:
 		return false

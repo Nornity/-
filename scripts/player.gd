@@ -6,10 +6,13 @@ signal observed(action: String)
 signal charge_ready
 
 const Models = preload("res://scripts/models.gd")
+const CROUCH_NOISE_RADIUS: float = 1.6
+const WALK_NOISE_RADIUS: float = 9.0
+const SPRINT_NOISE_RADIUS: float = 26.0
 @export var walk_speed: float = 2.55
-@export var run_speed: float = 4.65
+@export var run_speed: float = 5.8
 @export var crouch_speed: float = 1.25
-@export var stamina_drain: float = 23.0
+@export var stamina_drain: float = 28.0
 
 @onready var head: Node3D = $Head
 @onready var camera: Camera3D = $Head/Camera
@@ -90,8 +93,6 @@ func _physics_process(delta: float) -> void:
 	head.rotation.x = pitch
 	var movement: Vector2 = (Input.get_vector("move_left", "move_right", "move_forward", "move_back") + touch_move).limit_length(1.0)
 	moving = movement.length() > 0.08
-	if exhausted and stamina > 24.0:
-		exhausted = false
 	var wants_run: bool = (Input.is_action_pressed("sprint") or touch_sprint) and movement.y < -0.1 and not crouching
 	sprinting = wants_run and not exhausted and moving
 	var speed: float = crouch_speed if crouching else (run_speed if sprinting else walk_speed)
@@ -110,17 +111,12 @@ func _physics_process(delta: float) -> void:
 	moving = travelled > 0.001
 	if not moving:
 		sprinting = false
-	if sprinting:
-		stamina = maxf(0, stamina - stamina_drain * delta)
-		if stamina <= 0:
-			exhausted = true
-	else:
-		stamina = minf(100, stamina + (20.0 if not moving else 11.0) * delta)
+	_update_stamina(delta)
 	step_distance += travelled
 	bob += travelled * (3.8 if sprinting else 3.1)
 	if step_distance > (1.40 if crouching else (1.30 if sprinting else 1.32)):
 		step_distance = 0.0
-		stepped.emit(1.7 if crouching else (18.0 if sprinting else 7.0))
+		stepped.emit(CROUCH_NOISE_RADIUS if crouching else (SPRINT_NOISE_RADIUS if sprinting else WALK_NOISE_RADIUS))
 	if moving:
 		observed.emit("sprint" if sprinting else "move")
 	var target_noise: float = 0.0
@@ -136,6 +132,16 @@ func _physics_process(delta: float) -> void:
 	viewmodel.position.z = -0.58 + recoil * 0.095
 	viewmodel.rotation.x = -recoil * 0.19
 	tick_resources(delta)
+
+func _update_stamina(delta: float) -> void:
+	if exhausted and stamina > 24.0:
+		exhausted = false
+	if sprinting:
+		stamina = maxf(0.0, stamina - stamina_drain * delta)
+		if stamina <= 0.0:
+			exhausted = true
+	else:
+		stamina = minf(100.0, stamina + (20.0 if not moving else 11.0) * delta)
 
 func tick_resources(delta: float) -> void:
 	shot_cooldown = maxf(0, shot_cooldown - delta)

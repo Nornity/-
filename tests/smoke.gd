@@ -6,6 +6,7 @@ extends RefCounted
 const Maze = preload("res://scripts/maze.gd")
 const Levels = preload("res://scripts/level_config.gd")
 const Progress = preload("res://scripts/progress.gd")
+const Player = preload("res://scripts/player.gd")
 var passed: int = 0
 var failures: Array[String] = []
 
@@ -35,6 +36,22 @@ func run(app) -> Dictionary:
 	check(app.state == "playing", "Training starts")
 	check(not is_instance_valid(app.creature), "Training is genuinely safe")
 	check(app.player.loaded_count() == 2, "Taser starts with two loaded slots")
+	check(app.player.run_speed >= 5.7 and app.player.run_speed <= 6.0, "Sprint is noticeably faster than the old pace")
+	check(is_equal_approx(100.0 / app.player.stamina_drain, 100.0 / 28.0), "Full sprint lasts a short, limited burst")
+	app.player.stamina = 100.0
+	app.player.moving = true
+	app.player.sprinting = true
+	app.player._update_stamina(2.0)
+	check(is_equal_approx(app.player.stamina, 44.0), "Sprinting spends stamina at the tuned rate")
+	app.player._update_stamina(2.0)
+	check(app.player.stamina == 0.0 and app.player.exhausted, "An overlong sprint exhausts the player")
+	app.player.sprinting = false
+	app.player.moving = false
+	app.player._update_stamina(1.3)
+	app.player._update_stamina(1.0 / 60.0)
+	check(not app.player.exhausted and app.player.stamina > 24.0, "Resting recovers stamina before sprinting resumes")
+	app.player.stamina = 100.0
+	app.player.exhausted = false
 	app.begin_escape()
 	check(app.state == "playing", "Escape is impossible without required fuses")
 	var before: Vector3 = app.player.position
@@ -122,8 +139,28 @@ func run(app) -> Dictionary:
 	creature.state = "patrol"
 	creature._sense_player()
 	check(creature.state == "patrol", "Blind creature does not see a stationary lit player")
-	check(not creature.hear_noise(app.player.position, 1.7), "Crouched footsteps have a much shorter hearing radius")
-	check(creature.hear_noise(app.player.position, 18), "Running can be heard in a connected corridor")
+	check(is_equal_approx(creature.hearing_multiplier(), 1.35), "Blind creature gets a strong, explicit hearing profile")
+	var far_cell := Vector2i.ZERO
+	for candidate in app.world.maze.floor_cells:
+		var corridor_steps: int = app.world.maze.find_path(center, candidate).size()
+		var straight_distance: float = Maze.to_world(center).distance_to(Maze.to_world(candidate))
+		if corridor_steps >= 7 and corridor_steps <= 9 and straight_distance >= 9.0:
+			far_cell = candidate
+			break
+	check(far_cell != Vector2i.ZERO, "Acoustic range test finds a distant connected corridor")
+	if far_cell != Vector2i.ZERO:
+		app.player.global_position = Maze.to_world(far_cell, 0.03)
+		creature.state = "patrol"
+		creature.memory = 0.0
+		check(not creature.hear_noise(app.player.position, Player.WALK_NOISE_RADIUS), "Ordinary walking is audible nearby, not anywhere in the maze")
+		check(creature.hear_noise(app.player.position, Player.SPRINT_NOISE_RADIUS), "A sprint echoes across several connected corridors")
+		check(creature.state == "investigate", "Distant running attracts investigation without omniscient pursuit")
+	app.player.global_position = Maze.to_world(neighbor, 0.03)
+	app.player.camera.look_at(creature.global_position + Vector3(0, 1.3, 0))
+	creature.state = "patrol"
+	creature.memory = 0.0
+	check(not creature.hear_noise(app.player.position, Player.CROUCH_NOISE_RADIUS), "Crouch remains the quiet approach")
+	check(creature.hear_noise(app.player.position, Player.WALK_NOISE_RADIUS), "Walking is noticed at short range")
 	check(creature.state == "chase", "A close detected sound starts a chase")
 	app._fire_taser()
 	check(creature.state == "stunned" and creature.stun_time > 5.9, "Aimed taser stuns a visible creature")
@@ -134,6 +171,10 @@ func run(app) -> Dictionary:
 	check(creature.hear_noise(app.player.position, 27, false), "Rock impact is a valid distraction")
 	check(creature.state == "investigate" and creature.target == neighbor, "Creature investigates the sound location, not omniscient player tracking")
 	creature.config = creature.config.duplicate(true)
+	creature.config.type = "watcher"
+	check(is_equal_approx(creature.hearing_multiplier(), 0.95), "Watcher receives a balanced hearing multiplier")
+	creature.config.type = "listener"
+	check(is_equal_approx(creature.hearing_multiplier(), 1.65), "Deep listener is the most sensitive to sound")
 	creature.config.type = "watcher"
 	creature.state = "patrol"
 	creature._sense_player()
