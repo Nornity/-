@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Build a self-contained, offline Windows .exe launcher for the real Godot Web game.
 
-The executable is an auto-opening browser launcher for the already-tested
-Godot WebAssembly runtime, not a native Windows Godot export. It uses Node SEA,
-keeps all payloads in the one .exe, and needs an installed WebGL2 browser.
+The executable opens a dedicated Edge/Chrome app window for the tested Godot
+WebAssembly runtime. It is not a native Windows Godot export. Node SEA keeps all
+payloads in the one .exe; an installed Chromium browser with WebGL 2 is needed.
 """
 import argparse
 import base64
@@ -106,7 +106,7 @@ def main():
              "--sentinel-fuse", SEA_FUSE])
 
         # Suppress the otherwise empty console window when the user double-clicks.
-        # This changes only the PE subsystem field; Node still launches Edge normally.
+        # This changes only the PE subsystem field; Node still launches the app window.
         with original_exe.open("r+b") as executable:
             executable.seek(0x3C)
             pe_offset = struct.unpack("<I", executable.read(4))[0]
@@ -127,7 +127,7 @@ def main():
         output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(original_exe, output)
         print(f"Windows launcher: {output} ({output.stat().st_size:,} bytes)", flush=True)
-        print("Contains the actual Godot 4.6 WebAssembly game; double-click opens the default WebGL2 browser.", flush=True)
+        print("Contains the Godot 4.6 WebAssembly game; double-click opens a dedicated Edge/Chrome app window.", flush=True)
 
 
 if __name__ == "__main__":

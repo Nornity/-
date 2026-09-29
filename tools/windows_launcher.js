@@ -4,7 +4,6 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const os = require('node:os');
 const { spawn, exec } = require('node:child_process');
 const { isSea, getAsset: seaGetAsset } = require('node:sea');
 
@@ -103,13 +102,23 @@ const server = http.createServer((request, response) => {
   response.end(request.method === 'HEAD' ? undefined : body);
 });
 
-function showInBrowser(url) {
-  if (process.platform !== 'win32' || !isSea()) {
-    console.log(`Offline Godot game: ${url}`);
-    return;
+function findAppBrowser() {
+  const roots = [process.env['ProgramFiles(x86)'], process.env.ProgramFiles, process.env.LOCALAPPDATA]
+    .filter(Boolean);
+  const relativePaths = [
+    ['Microsoft', 'Edge', 'Application', 'msedge.exe'],
+    ['Google', 'Chrome', 'Application', 'chrome.exe'],
+  ];
+  for (const relativePath of relativePaths) {
+    for (const root of roots) {
+      const candidate = path.join(root, ...relativePath);
+      if (fs.existsSync(candidate)) return candidate;
+    }
   }
-  // Delegate to Windows' registered web browser; the game files themselves are
-  // all inside this executable and are served only on the loopback interface.
+  return null;
+}
+
+function openDefaultBrowser(url) {
   exec(`start "" "${url}"`, { windowsHide: true }, (error) => {
     if (error) {
       spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', 'Start-Process', url], {
@@ -117,6 +126,29 @@ function showInBrowser(url) {
       }).unref();
     }
   });
+}
+
+function showInAppWindow(url) {
+  if (process.platform !== 'win32' || !isSea()) {
+    console.log(`Offline Godot game app window: ${url}`);
+    return;
+  }
+  const appBrowser = findAppBrowser();
+  if (!appBrowser) {
+    console.error('Edge or Chrome was not found; falling back to the default browser.');
+    openDefaultBrowser(url);
+    return;
+  }
+  // Chromium app mode opens a dedicated, chromeless window (no tabs or address
+  // bar) while keeping the game's IndexedDB save in the user's normal profile.
+  const child = spawn(appBrowser, [`--app=${url}`, '--no-first-run', '--no-default-browser-check'], {
+    detached: true, windowsHide: true, stdio: 'ignore',
+  });
+  child.once('error', (error) => {
+    console.error(`Could not open the standalone game window: ${error.message}`);
+    openDefaultBrowser(url);
+  });
+  child.unref();
 }
 
 function listenOn(port, attemptsLeft) {
@@ -133,7 +165,7 @@ function listenOn(port, attemptsLeft) {
     server.off('error', onError);
     const address = server.address();
     const url = `http://127.0.0.1:${address.port}/`;
-    showInBrowser(url);
+    showInAppWindow(url);
   };
   server.once('error', onError);
   server.once('listening', onListening);
