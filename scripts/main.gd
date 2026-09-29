@@ -16,6 +16,7 @@ const TUTORIAL = [
 	"WASD — идите. Мышь — осмотритесь.",
 	"Зажмите SHIFT: бег тратит выносливость.",
 	"Нажмите C: присядьте и идите тише.",
+	"Не вставая, удерживайте SHIFT: тихий бег быстрее и тратит выносливость.",
 	"F — выключить или включить фонарь.",
 	"Найдите оранжевый предохранитель. Возьмите: E.",
 	"ПРОБЕЛ — выстрел из шокера. Здесь безопасно.",
@@ -29,6 +30,7 @@ const TOUCH_TUTORIAL = [
 	"Стик слева — идите. Справа — осмотритесь.",
 	"Удерживайте БЕГ и двигайтесь вперёд.",
 	"ТИШЕ — присядьте, чтобы уменьшить шум.",
+	"Не вставая, удерживайте БЕГ: тихий бег быстрее и тратит запас.",
 	"СВЕТ — выключить или включить фонарь.",
 	"Найдите предохранитель. Подойдите и жмите ВЗЯТЬ.",
 	"ШОКЕР — выстрел. Здесь безопасно.",
@@ -38,7 +40,7 @@ const TOUCH_TUTORIAL = [
 	"Соберите оба предохранителя. Следите за компасом.",
 	"Найдите шлюз и нажмите кнопку ШЛЮЗ. Вы готовы."
 ]
-const TUTORIAL_ACTIONS = ["move", "sprint", "crouch", "flashlight", "fuse", "fire", "reload", "rock", "map"]
+const TUTORIAL_ACTIONS = ["move", "sprint", "crouch", "crouch_sprint", "flashlight", "fuse", "fire", "reload", "rock", "map"]
 
 var state: String = "menu"
 var progress = Progress.new()
@@ -369,7 +371,7 @@ func _process(delta: float) -> void:
 		audio.play("heartbeat", lerpf(-22, -9, fear))
 		heart_timer = lerpf(1.7, 0.65, fear)
 	breath_timer -= delta
-	if player.stamina < 24 and breath_timer <= 0:
+	if player.stamina < player.max_stamina * 0.24 and breath_timer <= 0:
 		audio.play("breath", -12)
 		breath_timer = 2.4
 	if int(config.id) == 0:
@@ -496,8 +498,8 @@ func _update_tutorial() -> void:
 	if tutorial_step < TUTORIAL_ACTIONS.size():
 		if tutorial_seen.has(TUTORIAL_ACTIONS[tutorial_step]):
 			tutorial_step += 1
-	elif tutorial_step == 9 and fuses >= int(config.fuses):
-		tutorial_step = 10
+	elif tutorial_step == 10 and fuses >= int(config.fuses):
+		tutorial_step = 11
 
 func tutorial_text() -> String:
 	return (TOUCH_TUTORIAL if touch_enabled else TUTORIAL)[clampi(tutorial_step, 0, TUTORIAL.size() - 1)]

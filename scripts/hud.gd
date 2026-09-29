@@ -8,6 +8,7 @@ const MUTED := Color("8caaa6")
 const RED := Color("e57c5f")
 const GREEN := Color("a9d7ba")
 const AMBER := Color("d6b779")
+const MAP_GRID_SIZE: float = 410.0
 var app
 var mono: FontFile
 var heading: FontFile
@@ -98,8 +99,8 @@ func _draw() -> void:
 			centered("ЧТО-ТО РЯДОМ", 120, Color("ad9a7a"), 10)
 	if app.touch_enabled:
 		text("СВЕТ %d%%  /  ЗАПАС %d  /  ШОКЕР %d  /  КАМНИ %d" % [int(p.battery), p.reserves, p.loaded_count(), p.rocks], Vector2(450, 688), GREEN, 10)
-		centered("ТИШЕ" if p.crouching else ("ГРОМКИЙ БЕГ" if p.sprinting else "ШУМ %d%%" % int(p.noise_level * 100)), 625, AMBER, 10)
-		segments(Vector2(532, 646), 216, p.stamina / 100.0, AMBER)
+		centered("ТИХИЙ БЕГ" if p.crouch_sprinting else ("ТИШЕ" if p.crouching else ("ГРОМКИЙ БЕГ" if p.sprinting else "ШУМ %d%%" % int(p.noise_level * 100))), 625, AMBER, 10)
+		segments(Vector2(532, 646), 216, p.stamina / maxf(p.max_stamina, 1.0), AMBER)
 		return
 	# Bottom corners: readable equipment and resources, not a full-width dashboard.
 	draw_rect(Rect2(39, 606, 255, 81), Color(0.02, 0.035, 0.037, 0.62))
@@ -107,8 +108,8 @@ func _draw() -> void:
 	text("%03d%%" % int(p.battery) if p.flashlight else "ВЫКЛ", Vector2(235, 628), AMBER, 12)
 	segments(Vector2(54, 640), 224, p.battery / 100.0, GREEN if p.battery > 20 else RED)
 	text("ЗАПАС  %d БАТ." % p.reserves, Vector2(54, 671), INK, 11)
-	text("ТИХИЙ ШАГ" if p.crouching else ("БЕГ" if p.sprinting else "ХОДЬБА"), Vector2(205, 671), MUTED, 10)
-	segments(Vector2(540, 668), 200, p.stamina / 100.0, RED if p.stamina < 25 else Color("9faeac"), 25)
+	text("ТИХИЙ БЕГ" if p.crouch_sprinting else ("ТИХИЙ ШАГ" if p.crouching else ("БЕГ" if p.sprinting else "ХОДЬБА")), Vector2(205, 671), MUTED, 10)
+	segments(Vector2(540, 668), 200, p.stamina / maxf(p.max_stamina, 1.0), RED if p.stamina < p.max_stamina * 0.25 else Color("9faeac"), 25)
 	centered("ВЫНОСЛИВОСТЬ", 690, MUTED, 9)
 	for i in range(16):
 		var height: float = 3.0 + (sin(i * 2.7) * 0.5 + 0.5) * 12.0
@@ -141,13 +142,14 @@ func _draw_compass() -> void:
 func _draw_map() -> void:
 	var world = app.world
 	var n: int = world.maze.width
-	var cell_size: float = 248.0 / n
-	var origin := Vector2(968, 154)
-	draw_rect(Rect2(945, 112, 294, 328), Color(0.022, 0.057, 0.057, 0.96))
-	draw_rect(Rect2(945, 112, 294, 328), Color("465d58"), false, 1)
-	draw_line(Vector2(945, 112), Vector2(1002, 112), GREEN, 2)
-	text("СКАНЕР / " + str(app.config.code), Vector2(963, 135), GREEN, 11)
-	text("[M]", Vector2(1196, 135), MUTED, 11)
+	# Larger scanner view: the old 248 px grid was hard to read on 720p.
+	var cell_size: float = MAP_GRID_SIZE / n
+	var origin := Vector2(825, 140)
+	draw_rect(Rect2(805, 95, 450, 480), Color(0.022, 0.057, 0.057, 0.96))
+	draw_rect(Rect2(805, 95, 450, 480), Color("465d58"), false, 1)
+	draw_line(Vector2(805, 95), Vector2(862, 95), GREEN, 2)
+	text("СКАНЕР / " + str(app.config.code), Vector2(823, 120), GREEN, 11)
+	text("[M]", Vector2(1220, 120), MUTED, 11)
 	for y in range(n):
 		for x in range(n):
 			var index: int = y * n + x
@@ -170,4 +172,4 @@ func _draw_map() -> void:
 	var forward := Vector2(-sin(app.player.rotation.y), -cos(app.player.rotation.y))
 	var right := Vector2(-forward.y, forward.x)
 	draw_colored_polygon(PackedVector2Array([player_at + forward * 6.5, player_at - forward * 4 - right * 3.5, player_at - forward * 4 + right * 3.5]), INK)
-	text("СЕКТОР НЕ ИССЛЕДОВАН ПОЛНОСТЬЮ", Vector2(963, 427), MUTED, 9)
+	text("СЕКТОР НЕ ИССЛЕДОВАН ПОЛНОСТЬЮ", Vector2(823, 565), MUTED, 9)

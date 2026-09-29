@@ -7,12 +7,14 @@ signal charge_ready
 
 const Models = preload("res://scripts/models.gd")
 const CROUCH_NOISE_RADIUS: float = 1.6
-const WALK_NOISE_RADIUS: float = 9.0
-const SPRINT_NOISE_RADIUS: float = 26.0
+const WALK_NOISE_RADIUS: float = 10.0
+const SPRINT_NOISE_RADIUS: float = 30.0
 @export var walk_speed: float = 2.55
-@export var run_speed: float = 5.8
+@export var run_speed: float = 7.0
 @export var crouch_speed: float = 1.25
-@export var stamina_drain: float = 28.0
+@export var crouch_sprint_speed: float = 4.6
+@export var max_stamina: float = 120.0
+@export var stamina_drain: float = 22.0
 
 @onready var head: Node3D = $Head
 @onready var camera: Camera3D = $Head/Camera
@@ -25,9 +27,10 @@ var config: Dictionary = {}
 var flashlight: bool = true
 var battery: float = 100.0
 var reserves: int = 1
-var stamina: float = 100.0
+var stamina: float = 0.0
 var sprinting: bool = false
 var crouching: bool = false
+var crouch_sprinting: bool = false
 var exhausted: bool = false
 var moving: bool = false
 var noise_level: float = 0.0
@@ -49,6 +52,7 @@ var look_grace: float = 0.25
 var fear: float = 0.0
 
 func _ready() -> void:
+	stamina = max_stamina
 	collision.shape = collision.shape.duplicate()
 	viewmodel = Models.taser()
 	camera.add_child(viewmodel)
@@ -93,9 +97,13 @@ func _physics_process(delta: float) -> void:
 	head.rotation.x = pitch
 	var movement: Vector2 = (Input.get_vector("move_left", "move_right", "move_forward", "move_back") + touch_move).limit_length(1.0)
 	moving = movement.length() > 0.08
-	var wants_run: bool = (Input.is_action_pressed("sprint") or touch_sprint) and movement.y < -0.1 and not crouching
+	var wants_run: bool = (Input.is_action_pressed("sprint") or touch_sprint) and movement.y < -0.1
 	sprinting = wants_run and not exhausted and moving
-	var speed: float = crouch_speed if crouching else (run_speed if sprinting else walk_speed)
+	crouch_sprinting = sprinting and crouching
+	var speed: float = (
+		crouch_sprint_speed if crouch_sprinting
+		else (crouch_speed if crouching else (run_speed if sprinting else walk_speed))
+	)
 	if movement.y > 0:
 		speed *= 0.75
 	var direction: Vector3 = global_basis * Vector3(movement.x, 0, movement.y)
@@ -111,6 +119,7 @@ func _physics_process(delta: float) -> void:
 	moving = travelled > 0.001
 	if not moving:
 		sprinting = false
+		crouch_sprinting = false
 	_update_stamina(delta)
 	step_distance += travelled
 	bob += travelled * (3.8 if sprinting else 3.1)
@@ -119,6 +128,8 @@ func _physics_process(delta: float) -> void:
 		stepped.emit(CROUCH_NOISE_RADIUS if crouching else (SPRINT_NOISE_RADIUS if sprinting else WALK_NOISE_RADIUS))
 	if moving:
 		observed.emit("sprint" if sprinting else "move")
+		if crouch_sprinting:
+			observed.emit("crouch_sprint")
 	var target_noise: float = 0.0
 	if moving:
 		target_noise = 0.12 if crouching else (0.91 if sprinting else 0.40)
@@ -134,14 +145,14 @@ func _physics_process(delta: float) -> void:
 	tick_resources(delta)
 
 func _update_stamina(delta: float) -> void:
-	if exhausted and stamina > 24.0:
+	if exhausted and stamina > max_stamina * 0.24:
 		exhausted = false
 	if sprinting:
 		stamina = maxf(0.0, stamina - stamina_drain * delta)
 		if stamina <= 0.0:
 			exhausted = true
 	else:
-		stamina = minf(100.0, stamina + (20.0 if not moving else 11.0) * delta)
+		stamina = minf(max_stamina, stamina + (20.0 if not moving else 11.0) * delta)
 
 func tick_resources(delta: float) -> void:
 	shot_cooldown = maxf(0, shot_cooldown - delta)
@@ -240,4 +251,6 @@ func stop_input() -> void:
 	velocity = Vector3.ZERO
 	touch_move = Vector2.ZERO
 	touch_sprint = false
+	sprinting = false
+	crouch_sprinting = false
 	mouse_buffer = Vector2.ZERO

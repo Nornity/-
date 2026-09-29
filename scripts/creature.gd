@@ -8,6 +8,12 @@ signal sound_requested(sound_name: String, position_3d: Vector3)
 
 const Maze = preload("res://scripts/maze.gd")
 const Models = preload("res://scripts/models.gd")
+const PASSIVE_SENSE_RANGE: float = 24.0
+const CLOSE_CROUCH_RANGE: float = 1.2
+const CLOSE_STANDING_RANGE: float = 2.2
+const SIGHT_CROUCH_RANGE: float = 8.0
+const SIGHT_STANDING_RANGE: float = 13.0
+const FLASHLIGHT_SENSE_RANGE: float = 20.0
 var world
 var player
 var config: Dictionary
@@ -28,6 +34,11 @@ var awake_time: float = 0.0
 var gait: float = 0.0
 var model: Dictionary
 var rng := RandomNumberGenerator.new()
+@onready var collision_shape: CollisionShape3D = $Collision
+var recovering_from_stuck: bool = false
+var recovery_target := Vector3.ZERO
+var recovery_cell := Vector2i(-1, -1)
+var recovery_attempts: int = 0
 
 func setup(level_world, subject, sector: Dictionary) -> void:
 	world = level_world
@@ -50,9 +61,9 @@ func _change_state(next: String) -> void:
 
 func hearing_multiplier() -> float:
 	match str(config.get("type", "")):
-		"blind": return 1.35
-		"listener": return 1.65
-		"watcher": return 0.95
+		"blind": return 1.4
+		"listener": return 1.7
+		"watcher": return 1.0
 	return 1.0
 
 func hear_noise(where: Vector3, radius: float, from_player: bool = true) -> bool:
@@ -86,6 +97,9 @@ func stun(duration: float = 6.0) -> void:
 	stun_time = duration
 	memory = 0
 	path.clear()
+	recovering_from_stuck = false
+	recovery_attempts = 0
+	recovery_cell = Vector2i(-1, -1)
 	velocity = Vector3.ZERO
 	_change_state("stunned")
 
@@ -120,25 +134,14 @@ func _physics_process(delta: float) -> void:
 	if path_timer <= 0:
 		path_timer = 0.45 if state == "chase" else 0.9
 		_repath()
-	var aim := global_position
-	if _can_steer_to_memory():
-		# Keep the last seen position in world space. Chasing a cell center makes
-		# the creature orbit a player standing on a four-way junction.
-		aim = last_known
-	elif not path.is_empty():
-		aim = _visible_path_waypoint()
-		if Vector2(aim.x - global_position.x, aim.z - global_position.z).length() < 0.34:
-			path.pop_front()
-			if not path.is_empty():
-				aim = _visible_path_waypoint()
-	elif global_position.distance_to(Maze.to_world(target)) < 0.65:
-		if state == "patrol":
-			_new_patrol_target()
-		elif state == "search":
-			_choose_search_target()
-		elif state == "investigate":
-			_change_state("search")
-			search_time = 4.0
+	var aim := navigation_aim()
+	if recovering_from_stuck and _flat_distance(global_position, recovery_target) < 0.22:
+		recovering_from_stuck = false
+		recovery_attempts = 0
+		recovery_cell = Vector2i(-1, -1)
+		path_timer = 0.0
+		_repath()
+		aim = navigation_aim()
 	var direction: Vector3 = aim - global_position
 	direction.y = 0
 	var speed: float = float(config.chase) if state == "chase" else float(config.patrol)
@@ -160,12 +163,11 @@ func _physics_process(delta: float) -> void:
 	var travelled: float = Vector2(global_position.x - before.x, global_position.z - before.z).length()
 	if travelled < 0.001 and direction.length() > 0.1:
 		stuck_time += delta
-		if stuck_time > 0.8:
-			stuck_time = 0
-			path_timer = 0.0
-			_repath()
+		if stuck_time > 0.45:
+			stuck_time = 0.0
+			_begin_stuck_recovery()
 	else:
-		stuck_time = 0
+		stuck_time = 0.0
 	gait += travelled * 3.4
 	_animate(delta, travelled > 0.001)
 	growl_timer -= delta
@@ -182,18 +184,19 @@ func _physics_process(delta: float) -> void:
 
 func _sense_player() -> void:
 	var distance: float = global_position.distance_to(player.global_position)
-	if distance > 17.0:
+	if distance > PASSIVE_SENSE_RANGE:
 		return
 	var eye: Vector3 = global_position + Vector3(0, 1.9, 0)
 	var direction: Vector3 = (player.camera.global_position - eye).normalized()
 	var los: bool = world.line_of_sight(eye, player.camera.global_position)
-	var detected: bool = distance < (1.0 if player.crouching else 1.65) and los
+	var close_range: float = CLOSE_CROUCH_RANGE if player.crouching else CLOSE_STANDING_RANGE
+	var detected: bool = distance < close_range and los
 	if config.type != "blind" and los:
-		var sight_range: float = 6.0 if player.crouching else 9.5
+		var sight_range: float = SIGHT_CROUCH_RANGE if player.crouching else SIGHT_STANDING_RANGE
 		if distance < sight_range and (-global_basis.z).dot(direction) > 0.05:
 			detected = true
 		var in_beam: bool = (-player.camera.global_basis.z).dot(-direction) > 0.80
-		if player.flashlight and in_beam and distance < 15:
+		if player.flashlight and in_beam and distance < FLASHLIGHT_SENSE_RANGE:
 			detected = true
 	if detected:
 		last_known = player.global_position
@@ -205,32 +208,135 @@ func _can_steer_to_memory() -> bool:
 	if state != "chase" and state != "investigate":
 		return false
 	var eye := Vector3(0, 0.9, 0)
-	return world.line_of_sight(global_position + eye, last_known + eye)
+	return (
+		world.line_of_sight(global_position + eye, last_known + eye)
+		and _capsule_path_clear(last_known)
+	)
 
 func navigation_aim() -> Vector3:
+	if recovering_from_stuck:
+		return recovery_target
 	if _can_steer_to_memory():
+		# Keep a sub-cell chase target at open junctions, but never steer a full
+		# capsule through a corner just because a thin vision ray can see around it.
 		return last_known
-	if path.is_empty():
-		return Maze.to_world(target)
-	return _visible_path_waypoint()
+	if not path.is_empty():
+		var waypoint: Vector3 = _visible_path_waypoint()
+		if _flat_distance(waypoint, global_position) < 0.34:
+			path.pop_front()
+			if not path.is_empty():
+				waypoint = _visible_path_waypoint()
+		return waypoint
+	if _flat_distance(global_position, Maze.to_world(target)) < 0.65:
+		if state == "patrol":
+			_new_patrol_target()
+		elif state == "search":
+			_choose_search_target()
+		elif state == "investigate":
+			_change_state("search")
+			search_time = 4.0
+	return Maze.to_world(target, global_position.y)
 
 func _visible_path_waypoint() -> Vector3:
 	if path.is_empty():
-		return Maze.to_world(target)
+		return Maze.to_world(target, global_position.y)
 	var eye := Vector3(0, 0.9, 0)
 	var origin: Vector3 = global_position + eye
-	var furthest_visible := 0
+	var current_cell: Vector2i = Maze.to_cell(global_position)
+	var previous_cell: Vector2i = current_cell
+	var route_direction := Vector2i.ZERO
+	var furthest_clear := -1
 	for i in range(mini(path.size(), 10)):
-		var point: Vector3 = Maze.to_world(path[i]) + eye
-		if not world.line_of_sight(origin, point):
+		var next_cell: Vector2i = path[i]
+		var step: Vector2i = next_cell - previous_cell
+		# Do not shortcut over a 90-degree turn. The creature follows the centre
+		# of each straight corridor, leaving its radius clear of the inside corner.
+		if route_direction != Vector2i.ZERO and step != route_direction:
 			break
-		furthest_visible = i
-	for i in range(furthest_visible):
+		route_direction = step
+		var waypoint: Vector3 = Maze.to_world(next_cell, global_position.y)
+		if not world.line_of_sight(origin, waypoint + eye) or not _capsule_path_clear(waypoint):
+			break
+		furthest_clear = i
+		previous_cell = next_cell
+	for i in range(furthest_clear):
 		path.pop_front()
-	return Maze.to_world(path[0])
+	return Maze.to_world(path[0], global_position.y)
+
+func _capsule_path_clear(destination: Vector3) -> bool:
+	var motion := Vector3(destination.x - global_position.x, 0.0, destination.z - global_position.z)
+	if motion.length_squared() < 0.0001:
+		return true
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = collision_shape.shape
+	query.transform = collision_shape.global_transform
+	query.motion = motion
+	query.collision_mask = 1
+	query.collide_with_bodies = true
+	query.collide_with_areas = false
+	var excluded: Array[RID] = [get_rid()]
+	query.exclude = excluded
+	var fractions: PackedFloat32Array = get_world_3d().direct_space_state.cast_motion(query)
+	return not fractions.is_empty() and fractions[0] >= 0.995
+
+func _begin_stuck_recovery() -> void:
+	path_timer = 0.0
+	_repath()
+	if recovery_attempts >= 4:
+		recovery_attempts = 0
+		recovery_cell = Vector2i(-1, -1)
+	var current_cell: Vector2i = Maze.to_cell(global_position)
+	var candidates: Array[Vector2i] = []
+	if world.maze.is_open(current_cell):
+		candidates.append(current_cell)
+		for step in Maze.DIRECTIONS:
+			var neighbor: Vector2i = current_cell + step
+			if world.maze.is_open(neighbor):
+				candidates.append(neighbor)
+	var best_cell := Vector2i(-1, -1)
+	var best_score: float = INF
+	for cell in candidates:
+		if cell == recovery_cell:
+			continue
+		var waypoint: Vector3 = Maze.to_world(cell, global_position.y)
+		var distance: float = _flat_distance(global_position, waypoint)
+		if distance < 0.24 or not _capsule_path_clear(waypoint):
+			continue
+		var route: Array[Vector2i] = world.maze.find_path(cell, target)
+		if cell != target and route.is_empty():
+			continue
+		var score: float = distance + route.size() * Maze.CELL_SIZE * 0.12
+		if score < best_score:
+			best_score = score
+			best_cell = cell
+	if best_cell.x >= 0:
+		recovery_cell = best_cell
+		recovery_target = Maze.to_world(best_cell, global_position.y)
+		recovering_from_stuck = true
+		recovery_attempts += 1
+		path.clear()
+		velocity = Vector3.ZERO
+	else:
+		recovering_from_stuck = false
+		_repath()
+
+func _flat_distance(first: Vector3, second: Vector3) -> float:
+	return Vector2(first.x - second.x, first.z - second.z).length()
 
 func _repath() -> void:
-	path = world.maze.find_path(Maze.to_cell(global_position), target)
+	var start: Vector2i = Maze.to_cell(global_position)
+	if not world.maze.is_open(start):
+		var nearest := Vector2i(-1, -1)
+		var nearest_distance: float = INF
+		for cell in world.maze.floor_cells:
+			var distance: float = _flat_distance(global_position, Maze.to_world(cell, global_position.y))
+			if distance < nearest_distance:
+				nearest_distance = distance
+				nearest = cell
+			if nearest_distance < Maze.CELL_SIZE * 0.5:
+				break
+		start = nearest
+	path = world.maze.find_path(start, target) if start.x >= 0 else []
 
 func _new_patrol_target() -> void:
 	var cells: Array[Vector2i] = world.maze.floor_cells

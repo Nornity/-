@@ -36,21 +36,22 @@ func run(app) -> Dictionary:
 	check(app.state == "playing", "Training starts")
 	check(not is_instance_valid(app.creature), "Training is genuinely safe")
 	check(app.player.loaded_count() == 2, "Taser starts with two loaded slots")
-	check(app.player.run_speed >= 5.7 and app.player.run_speed <= 6.0, "Sprint is noticeably faster than the old pace")
-	check(is_equal_approx(100.0 / app.player.stamina_drain, 100.0 / 28.0), "Full sprint lasts a short, limited burst")
-	app.player.stamina = 100.0
+	check(app.player.run_speed >= 6.9 and app.player.run_speed <= 7.2, "Sprint uses the increased running speed")
+	check(app.player.max_stamina > 100.0 and app.player.stamina_drain < 28.0, "Stamina capacity and sprint duration are increased")
+	check(is_equal_approx(app.player.max_stamina / app.player.stamina_drain, 120.0 / 22.0), "Full sprint lasts a longer but limited burst")
+	app.player.stamina = app.player.max_stamina
 	app.player.moving = true
 	app.player.sprinting = true
 	app.player._update_stamina(2.0)
-	check(is_equal_approx(app.player.stamina, 44.0), "Sprinting spends stamina at the tuned rate")
-	app.player._update_stamina(2.0)
+	check(is_equal_approx(app.player.stamina, 76.0), "Sprinting spends stamina at the tuned rate")
+	app.player._update_stamina(4.0)
 	check(app.player.stamina == 0.0 and app.player.exhausted, "An overlong sprint exhausts the player")
 	app.player.sprinting = false
 	app.player.moving = false
-	app.player._update_stamina(1.3)
+	app.player._update_stamina(1.5)
 	app.player._update_stamina(1.0 / 60.0)
-	check(not app.player.exhausted and app.player.stamina > 24.0, "Resting recovers stamina before sprinting resumes")
-	app.player.stamina = 100.0
+	check(not app.player.exhausted and app.player.stamina > app.player.max_stamina * 0.24, "Resting recovers stamina before sprinting resumes")
+	app.player.stamina = app.player.max_stamina
 	app.player.exhausted = false
 	app.begin_escape()
 	check(app.state == "playing", "Escape is impossible without required fuses")
@@ -71,6 +72,18 @@ func run(app) -> Dictionary:
 	check(app.player.active and app.world.playing, "Resume restores gameplay")
 	app.player.toggle_crouch()
 	check(app.player.crouching and app.player.collision.shape.height < 1.2, "Crouch lowers collision capsule")
+	check(app.player.crouch_sprint_speed > app.player.crouch_speed, "Crouched sprint is faster than a quiet crouch-walk")
+	var crouch_stamina_before: float = app.player.stamina
+	Input.action_press("move_forward")
+	Input.action_press("sprint")
+	await frames(app, 12)
+	check(app.player.crouching and app.player.crouch_sprinting, "Holding Shift while crouched activates the low sprint")
+	check(app.player.stamina < crouch_stamina_before, "Crouched sprint consumes stamina")
+	check(app.tutorial_seen.has("crouch_sprint"), "The training tutorial observes crouched sprint")
+	check(app.TUTORIAL[3].contains("SHIFT"), "The training includes a separate crouched-sprint instruction")
+	Input.action_release("sprint")
+	Input.action_release("move_forward")
+	await frames(app, 2)
 	app.player.toggle_crouch()
 	check(app.player.fire(), "A loaded taser can fire")
 	check(app.player.loaded_count() == 1, "A shot spends exactly one charge")
@@ -93,6 +106,7 @@ func run(app) -> Dictionary:
 	app.player.flashlight = true
 	app.perform_action("map")
 	check(app.map_visible, "Map toggles on")
+	check(app.ui.hud.MAP_GRID_SIZE >= 410.0, "Scanner map is enlarged for clearer reading")
 	app.perform_action("map")
 	check(not app.map_visible, "Map toggles off")
 	_test_touch(app)
@@ -139,13 +153,14 @@ func run(app) -> Dictionary:
 	creature.state = "patrol"
 	creature._sense_player()
 	check(creature.state == "patrol", "Blind creature does not see a stationary lit player")
-	check(is_equal_approx(creature.hearing_multiplier(), 1.35), "Blind creature gets a strong, explicit hearing profile")
+	check(is_equal_approx(creature.hearing_multiplier(), 1.4), "Blind creature gets a strong, explicit hearing profile")
 	await _test_junction_approach(app, creature)
+	await _test_corner_navigation(app, creature)
 	var far_cell := Vector2i.ZERO
 	for candidate in app.world.maze.floor_cells:
 		var corridor_steps: int = app.world.maze.find_path(center, candidate).size()
 		var straight_distance: float = Maze.to_world(center).distance_to(Maze.to_world(candidate))
-		if corridor_steps >= 7 and corridor_steps <= 9 and straight_distance >= 9.0:
+		if corridor_steps >= 10 and corridor_steps <= 15 and straight_distance >= 15.0 and straight_distance <= 30.0:
 			far_cell = candidate
 			break
 	check(far_cell != Vector2i.ZERO, "Acoustic range test finds a distant connected corridor")
@@ -173,9 +188,9 @@ func run(app) -> Dictionary:
 	check(creature.state == "investigate" and creature.target == neighbor, "Creature investigates the sound location, not omniscient player tracking")
 	creature.config = creature.config.duplicate(true)
 	creature.config.type = "watcher"
-	check(is_equal_approx(creature.hearing_multiplier(), 0.95), "Watcher receives a balanced hearing multiplier")
+	check(is_equal_approx(creature.hearing_multiplier(), 1.0), "Watcher receives a balanced hearing multiplier")
 	creature.config.type = "listener"
-	check(is_equal_approx(creature.hearing_multiplier(), 1.65), "Deep listener is the most sensitive to sound")
+	check(is_equal_approx(creature.hearing_multiplier(), 1.7), "Deep listener is the most sensitive to sound")
 	creature.config.type = "watcher"
 	creature.state = "patrol"
 	creature._sense_player()
@@ -302,6 +317,7 @@ func _test_mazes() -> void:
 			maze.generate(cfg, map_seed)
 			var distances: PackedInt32Array = maze.distances_from(maze.spawn)
 			check(maze.width % 2 == 1, "Maze dimensions stay odd")
+			check(maze.width == int(cfg.size), "Sector uses the enlarged configured maze size")
 			var connected: bool = true
 			for cell in maze.floor_cells:
 				if distances[cell.y * maze.width + cell.x] < 0:
@@ -340,7 +356,72 @@ func _test_mazes() -> void:
 		var maze = Maze.new()
 		maze.generate(cfg, 707)
 		check(maze.fuse_cells.size() == int(cfg.fuses), "Endless floors remain playable as difficulty grows")
-		check(maze.width <= 29 and float(cfg.chase) < 4.65, "Endless difficulty has fair bounds")
+		check(maze.width <= 35 and float(cfg.chase) < 4.65, "Endless difficulty has fair bounds")
+
+func _test_corner_navigation(app, creature) -> void:
+	var start_cell := Vector2i.ZERO
+	var goal_cell := Vector2i.ZERO
+	var route: Array[Vector2i] = []
+	var first_direction := Vector2i.ZERO
+	var found_turn := false
+	for start in app.world.maze.floor_cells:
+		for goal in app.world.maze.floor_cells:
+			var candidate: Array[Vector2i] = app.world.maze.find_path(start, goal)
+			if candidate.size() < 3:
+				continue
+			var direction: Vector2i = candidate[0] - start
+			for i in range(1, candidate.size()):
+				var next_direction: Vector2i = candidate[i] - candidate[i - 1]
+				if next_direction != direction:
+					start_cell = start
+					goal_cell = goal
+					route = candidate
+					first_direction = direction
+					found_turn = true
+					break
+			if found_turn:
+				break
+		if found_turn:
+			break
+	check(found_turn, "Navigation test finds a route with a right-angle corner")
+	var saved_position: Vector3 = creature.global_position
+	var saved_target: Vector2i = creature.target
+	var saved_state: String = creature.state
+	var saved_path: Array[Vector2i] = creature.path.duplicate()
+	var saved_recovery: bool = creature.recovering_from_stuck
+	var saved_recovery_target: Vector3 = creature.recovery_target
+	var saved_recovery_cell: Vector2i = creature.recovery_cell
+	var saved_recovery_attempts: int = creature.recovery_attempts
+	var was_active: bool = creature.active
+	creature.active = false
+	creature.global_position = Maze.to_world(start_cell, 0.03)
+	creature.target = goal_cell
+	creature.state = "patrol"
+	creature.recovering_from_stuck = false
+	creature.path = route.duplicate()
+	var aimed_cell: Vector2i = Maze.to_cell(creature._visible_path_waypoint())
+	var aimed_offset: Vector2i = aimed_cell - start_cell
+	check(
+		(aimed_offset.x == 0 or aimed_offset.y == 0)
+		and aimed_offset.x * first_direction.x + aimed_offset.y * first_direction.y > 0,
+		"Creature follows the first straight corridor instead of cutting across a corner"
+	)
+	var off_center: Vector3 = Maze.to_world(start_cell, 0.03) + Vector3(first_direction.x, 0, first_direction.y) * 0.70
+	creature.global_position = off_center
+	await frames(app, 1)
+	creature._begin_stuck_recovery()
+	check(creature.recovering_from_stuck, "Stuck recovery picks a capsule-clear nearby cell centre")
+	check(Maze.to_cell(creature.recovery_target) == start_cell, "Corner recovery recentres in the current open cell first")
+	creature.recovering_from_stuck = saved_recovery
+	creature.recovery_target = saved_recovery_target
+	creature.recovery_cell = saved_recovery_cell
+	creature.recovery_attempts = saved_recovery_attempts
+	creature.active = was_active
+	creature.global_position = saved_position
+	creature.target = saved_target
+	creature.state = saved_state
+	creature.path = saved_path
+	creature.recovering_from_stuck = saved_recovery
 
 func _test_junction_approach(app, creature) -> void:
 	var intersection_cell := Vector2i.ZERO
