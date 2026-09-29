@@ -419,7 +419,7 @@ func _test_corner_navigation(app, creature) -> void:
 	creature.recovering_from_stuck = false
 	creature.aligned_cell = Vector2i(-1, -1)
 	creature.path = route.duplicate()
-	var aimed_cell: Vector2i = Maze.to_cell(creature._visible_path_waypoint())
+	var aimed_cell: Vector2i = Maze.to_cell(creature.navigation_aim())
 	var aimed_offset: Vector2i = aimed_cell - start_cell
 	check(
 		(aimed_offset.x == 0 or aimed_offset.y == 0)

@@ -165,9 +165,11 @@ func _physics_process(delta: float) -> void:
 		velocity.z = 0
 	velocity.y = -0.1 if is_on_floor() else velocity.y - delta * 15.0
 	var before := global_position
+	var distance_to_aim_before: float = _flat_distance(before, aim)
 	move_and_slide()
 	var travelled: float = Vector2(global_position.x - before.x, global_position.z - before.z).length()
-	if travelled < 0.001 and direction.length() > 0.1:
+	var progress_to_aim: float = distance_to_aim_before - _flat_distance(global_position, aim)
+	if progress_to_aim < 0.002 and direction.length() > 0.1:
 		stuck_time += delta
 		if stuck_time > 0.45:
 			stuck_time = 0.0
@@ -231,22 +233,23 @@ func navigation_aim() -> Vector3:
 		aligned_cell = Vector2i(-1, -1)
 		return last_known
 	if not path.is_empty():
-		# Repaths can happen after the body crossed into a cell but before it
-		# reached that cell's centre. Re-centre there before taking a turn; the
-		# path array excludes its start cell, so otherwise the first waypoint
-		# could pull the capsule diagonally into the inside corner. Remember the
-		# aligned cell to avoid oscillating at the centre tolerance while moving on.
+		# Follow one grid waypoint at a time. On entering a cell, centre the body
+		# once before following the next edge; this prevents replanning from
+		# aiming diagonally across the inside of a 90-degree corner.
 		var current_cell: Vector2i = Maze.to_cell(global_position)
 		if world.maze.is_open(current_cell) and aligned_cell != current_cell:
 			var cell_center: Vector3 = Maze.to_world(current_cell, global_position.y)
 			if _flat_distance(cell_center, global_position) > 0.12:
 				return cell_center
 			aligned_cell = current_cell
-		var waypoint: Vector3 = _visible_path_waypoint()
+		while not path.is_empty() and path[0] == current_cell:
+			path.pop_front()
+		if path.is_empty():
+			return Maze.to_world(target, global_position.y)
+		var waypoint: Vector3 = Maze.to_world(path[0], global_position.y)
 		if _flat_distance(waypoint, global_position) < 0.12:
 			path.pop_front()
-			if not path.is_empty():
-				waypoint = _visible_path_waypoint()
+			waypoint = Maze.to_world(path[0], global_position.y) if not path.is_empty() else Maze.to_world(target, global_position.y)
 		return waypoint
 	if _flat_distance(global_position, Maze.to_world(target)) < 0.65:
 		if state == "patrol":
@@ -257,32 +260,6 @@ func navigation_aim() -> Vector3:
 			_change_state("search")
 			search_time = 4.0
 	return Maze.to_world(target, global_position.y)
-
-func _visible_path_waypoint() -> Vector3:
-	if path.is_empty():
-		return Maze.to_world(target, global_position.y)
-	var eye := Vector3(0, 0.9, 0)
-	var origin: Vector3 = global_position + eye
-	var current_cell: Vector2i = Maze.to_cell(global_position)
-	var previous_cell: Vector2i = current_cell
-	var route_direction := Vector2i.ZERO
-	var furthest_clear := -1
-	for i in range(mini(path.size(), 10)):
-		var next_cell: Vector2i = path[i]
-		var step: Vector2i = next_cell - previous_cell
-		# Do not shortcut over a 90-degree turn. The creature follows the centre
-		# of each straight corridor, leaving its radius clear of the inside corner.
-		if route_direction != Vector2i.ZERO and step != route_direction:
-			break
-		route_direction = step
-		var waypoint: Vector3 = Maze.to_world(next_cell, global_position.y)
-		if not world.line_of_sight(origin, waypoint + eye) or not _capsule_path_clear(waypoint):
-			break
-		furthest_clear = i
-		previous_cell = next_cell
-	for i in range(furthest_clear):
-		path.pop_front()
-	return Maze.to_world(path[0], global_position.y)
 
 func _capsule_path_clear(destination: Vector3) -> bool:
 	var motion := Vector3(destination.x - global_position.x, 0.0, destination.z - global_position.z)

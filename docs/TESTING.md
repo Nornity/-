@@ -60,7 +60,7 @@
 
 ## Windows-лаунчер
 
-В репозитории пока лежит прежний однофайловый Windows ZIP на Node.js SEA: он открывает Godot WebAssembly в app-окне Edge/Chrome, **не является нативной сборкой Godot** и не пересобран с текущими изменениями игры. Его ранее проверенный игровой пакет проходил 816 smoke-проверок; текущий исходный проект прошёл 897 проверок в Godot Web 4.6 / Chromium 153. Сам PE и app-режим не тестировались на Windows. Нативный Windows export остаётся отдельной незавершённой задачей; Authenticode-подписи нет.
+`downloads/lower-level-windows.zip` пересобран с текущим PCK игры и Godot WebAssembly runtime. Это однофайловый Windows-лаунчер на Node.js SEA, который открывает игру в app-окне Edge/Chrome, **не нативная сборка Godot**. Исходный проект с этим PCK прошёл 897 smoke-проверок в Godot Web 4.6 / Chromium 153. Сам PE и app-режим не тестировались на Windows. Нативный Windows export остаётся отдельной незавершённой задачей; Authenticode-подписи нет.
 
 ## Что пока не проверено
 
