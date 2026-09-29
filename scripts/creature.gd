@@ -378,7 +378,7 @@ func _emergency_recenter() -> bool:
 	if best_cell.x < 0:
 		return false
 	# A brief snap inside the nearest clear tile is safer than letting a wedged
-	# capsule vibrate forever. It is only used after two failed smooth recoveries.
+	# capsule vibrate forever. It is only used after repeated recovery attempts.
 	global_position = Maze.to_world(best_cell, global_position.y)
 	velocity = Vector3.ZERO
 	recovering_from_stuck = false
