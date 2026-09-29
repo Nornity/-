@@ -39,6 +39,7 @@ var recovering_from_stuck: bool = false
 var recovery_target := Vector3.ZERO
 var recovery_cell := Vector2i(-1, -1)
 var recovery_attempts: int = 0
+var aligned_cell := Vector2i(-1, -1)
 
 func setup(level_world, subject, sector: Dictionary) -> void:
 	world = level_world
@@ -55,6 +56,7 @@ func _change_state(next: String) -> void:
 	if state == next:
 		return
 	state = next
+	aligned_cell = Vector2i(-1, -1)
 	state_changed.emit(next)
 	if next == "chase":
 		sound_requested.emit("growl", global_position)
@@ -83,6 +85,8 @@ func hear_noise(where: Vector3, radius: float, from_player: bool = true) -> bool
 	if not from_player and state == "chase" and memory > 1.0:
 		return false
 	last_known = where
+	if target != sound_cell:
+		aligned_cell = Vector2i(-1, -1)
 	target = sound_cell
 	path_timer = 0.0
 	search_time = 7.0
@@ -99,6 +103,7 @@ func stun(duration: float = 6.0) -> void:
 	path.clear()
 	recovering_from_stuck = false
 	recovery_attempts = 0
+	aligned_cell = Vector2i(-1, -1)
 	recovery_cell = Vector2i(-1, -1)
 	velocity = Vector3.ZERO
 	_change_state("stunned")
@@ -138,6 +143,7 @@ func _physics_process(delta: float) -> void:
 	if recovering_from_stuck and _flat_distance(global_position, recovery_target) < 0.22:
 		recovering_from_stuck = false
 		recovery_attempts = 0
+		aligned_cell = Vector2i(-1, -1)
 		recovery_cell = Vector2i(-1, -1)
 		path_timer = 0.0
 		_repath()
@@ -200,7 +206,10 @@ func _sense_player() -> void:
 			detected = true
 	if detected:
 		last_known = player.global_position
-		target = Maze.to_cell(last_known)
+		var seen_cell: Vector2i = Maze.to_cell(last_known)
+		if target != seen_cell:
+			aligned_cell = Vector2i(-1, -1)
+		target = seen_cell
 		memory = 3.6
 		_change_state("chase")
 
@@ -219,10 +228,22 @@ func navigation_aim() -> Vector3:
 	if _can_steer_to_memory():
 		# Keep a sub-cell chase target at open junctions, but never steer a full
 		# capsule through a corner just because a thin vision ray can see around it.
+		aligned_cell = Vector2i(-1, -1)
 		return last_known
 	if not path.is_empty():
+		# Repaths can happen after the body crossed into a cell but before it
+		# reached that cell's centre. Re-centre there before taking a turn; the
+		# path array excludes its start cell, so otherwise the first waypoint
+		# could pull the capsule diagonally into the inside corner. Remember the
+		# aligned cell to avoid oscillating at the centre tolerance while moving on.
+		var current_cell: Vector2i = Maze.to_cell(global_position)
+		if world.maze.is_open(current_cell) and aligned_cell != current_cell:
+			var cell_center: Vector3 = Maze.to_world(current_cell, global_position.y)
+			if _flat_distance(cell_center, global_position) > 0.12:
+				return cell_center
+			aligned_cell = current_cell
 		var waypoint: Vector3 = _visible_path_waypoint()
-		if _flat_distance(waypoint, global_position) < 0.34:
+		if _flat_distance(waypoint, global_position) < 0.12:
 			path.pop_front()
 			if not path.is_empty():
 				waypoint = _visible_path_waypoint()
@@ -279,8 +300,22 @@ func _capsule_path_clear(destination: Vector3) -> bool:
 	var fractions: PackedFloat32Array = get_world_3d().direct_space_state.cast_motion(query)
 	return not fractions.is_empty() and fractions[0] >= 0.995
 
+func _capsule_position_clear(root_position: Vector3) -> bool:
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = collision_shape.shape
+	var shape_transform: Transform3D = collision_shape.global_transform
+	shape_transform.origin += root_position - global_position
+	query.transform = shape_transform
+	query.collision_mask = 1
+	query.collide_with_bodies = true
+	query.collide_with_areas = false
+	var excluded: Array[RID] = [get_rid()]
+	query.exclude = excluded
+	return get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
+
 func _begin_stuck_recovery() -> void:
 	path_timer = 0.0
+	aligned_cell = Vector2i(-1, -1)
 	_repath()
 	if recovery_attempts >= 4:
 		recovery_attempts = 0
@@ -318,7 +353,42 @@ func _begin_stuck_recovery() -> void:
 		velocity = Vector3.ZERO
 	else:
 		recovering_from_stuck = false
+		recovery_attempts += 1
+		if recovery_attempts >= 2 and _emergency_recenter():
+			return
 		_repath()
+
+func _emergency_recenter() -> bool:
+	var best_cell := Vector2i(-1, -1)
+	var best_score: float = INF
+	for cell in world.maze.floor_cells:
+		var candidate: Vector3 = Maze.to_world(cell, global_position.y)
+		var distance: float = _flat_distance(global_position, candidate)
+		if distance < 0.24 or distance > Maze.CELL_SIZE * 1.5:
+			continue
+		if not _capsule_position_clear(candidate):
+			continue
+		var route: Array[Vector2i] = world.maze.find_path(cell, target)
+		if cell != target and route.is_empty():
+			continue
+		var score: float = distance + route.size() * Maze.CELL_SIZE * 0.12
+		if score < best_score:
+			best_score = score
+			best_cell = cell
+	if best_cell.x < 0:
+		return false
+	# A brief snap inside the nearest clear tile is safer than letting a wedged
+	# capsule vibrate forever. It is only used after two failed smooth recoveries.
+	global_position = Maze.to_world(best_cell, global_position.y)
+	velocity = Vector3.ZERO
+	recovering_from_stuck = false
+	recovery_attempts = 0
+	recovery_cell = Vector2i(-1, -1)
+	aligned_cell = Vector2i(-1, -1)
+	path.clear()
+	path_timer = 0.0
+	_repath()
+	return true
 
 func _flat_distance(first: Vector3, second: Vector3) -> float:
 	return Vector2(first.x - second.x, first.z - second.z).length()
@@ -341,6 +411,7 @@ func _repath() -> void:
 func _new_patrol_target() -> void:
 	var cells: Array[Vector2i] = world.maze.floor_cells
 	target = cells[rng.randi_range(0, cells.size() - 1)]
+	aligned_cell = Vector2i(-1, -1)
 	path_timer = 0
 
 func _choose_search_target() -> void:
@@ -351,6 +422,7 @@ func _choose_search_target() -> void:
 			nearby.append(cell)
 	if not nearby.is_empty():
 		target = nearby[rng.randi_range(0, nearby.size() - 1)]
+		aligned_cell = Vector2i(-1, -1)
 		path_timer = 0
 
 func _animate(delta: float, is_moving: bool) -> void:

@@ -28,6 +28,9 @@ func run(app) -> Dictionary:
 	var original_best: Dictionary = app.progress.best.duplicate(true)
 	var original_endless: int = app.progress.endless_best
 	var original_settings: Dictionary = app.progress.settings.duplicate(true)
+	var random_seed_a: int = app._fresh_map_seed()
+	var random_seed_b: int = app._fresh_map_seed()
+	check(random_seed_a != random_seed_b, "Fresh runs receive different random map seeds")
 	# The logic/physics tests do not need GPU rendering. Keep real physics active.
 	app.get_viewport().disable_3d = true
 	_test_mazes()
@@ -351,6 +354,12 @@ func _test_mazes() -> void:
 			var twin = Maze.new()
 			twin.generate(cfg, map_seed)
 			check(twin.cells == maze.cells and twin.fuse_cells == maze.fuse_cells, "A seed reproduces layout and item positions")
+	var random_a = Maze.new()
+	var random_b = Maze.new()
+	var random_cfg: Dictionary = Levels.sector(1)
+	random_a.generate(random_cfg, 8713)
+	random_b.generate(random_cfg, 8714)
+	check(random_a.cells != random_b.cells, "Different seeds produce different random maze layouts")
 	for floor_number in [1, 2, 3, 8, 20, 60]:
 		var cfg: Dictionary = Levels.endless(floor_number)
 		var maze = Maze.new()
@@ -363,6 +372,7 @@ func _test_corner_navigation(app, creature) -> void:
 	var goal_cell := Vector2i.ZERO
 	var route: Array[Vector2i] = []
 	var first_direction := Vector2i.ZERO
+	var turn_cell := Vector2i.ZERO
 	var found_turn := false
 	for start in app.world.maze.floor_cells:
 		for goal in app.world.maze.floor_cells:
@@ -377,6 +387,7 @@ func _test_corner_navigation(app, creature) -> void:
 					goal_cell = goal
 					route = candidate
 					first_direction = direction
+					turn_cell = candidate[i - 1]
 					found_turn = true
 					break
 			if found_turn:
@@ -392,12 +403,21 @@ func _test_corner_navigation(app, creature) -> void:
 	var saved_recovery_target: Vector3 = creature.recovery_target
 	var saved_recovery_cell: Vector2i = creature.recovery_cell
 	var saved_recovery_attempts: int = creature.recovery_attempts
+	var saved_aligned_cell: Vector2i = creature.aligned_cell
+	var saved_awake_time: float = creature.awake_time
+	var saved_sense_timer: float = creature.sense_timer
+	var saved_path_timer: float = creature.path_timer
+	var saved_stuck_time: float = creature.stuck_time
+	var saved_velocity: Vector3 = creature.velocity
+	var saved_player_position: Vector3 = app.player.global_position
+	var saved_player_active: bool = app.player.active
 	var was_active: bool = creature.active
 	creature.active = false
 	creature.global_position = Maze.to_world(start_cell, 0.03)
 	creature.target = goal_cell
 	creature.state = "patrol"
 	creature.recovering_from_stuck = false
+	creature.aligned_cell = Vector2i(-1, -1)
 	creature.path = route.duplicate()
 	var aimed_cell: Vector2i = Maze.to_cell(creature._visible_path_waypoint())
 	var aimed_offset: Vector2i = aimed_cell - start_cell
@@ -406,6 +426,43 @@ func _test_corner_navigation(app, creature) -> void:
 		and aimed_offset.x * first_direction.x + aimed_offset.y * first_direction.y > 0,
 		"Creature follows the first straight corridor instead of cutting across a corner"
 	)
+	var turn_path: Array[Vector2i] = app.world.maze.find_path(turn_cell, goal_cell)
+	var entering_turn_cell: Vector3 = Maze.to_world(turn_cell, 0.03) - Vector3(first_direction.x, 0, first_direction.y) * 0.70
+	creature.global_position = entering_turn_cell
+	creature.target = goal_cell
+	creature.path = turn_path
+	check(Maze.to_cell(creature.global_position) == turn_cell, "Turn test places the creature off-centre inside the corner cell")
+	var corner_aim: Vector3 = creature.navigation_aim()
+	check(
+		corner_aim.is_equal_approx(Maze.to_world(turn_cell, 0.03)),
+		"Creature re-centres in the corner cell before turning into the next corridor"
+	)
+	var catch_callback := Callable(app, "die")
+	var had_catch_callback: bool = creature.caught.is_connected(catch_callback)
+	if had_catch_callback:
+		creature.caught.disconnect(catch_callback)
+	app.player.active = false
+	creature.global_position = entering_turn_cell
+	creature.target = goal_cell
+	creature.path = turn_path.duplicate()
+	creature.state = "patrol"
+	creature.active = true
+	creature.awake_time = 10.0
+	creature.sense_timer = 100.0
+	creature.path_timer = 100.0
+	creature.stuck_time = 0.0
+	creature.recovering_from_stuck = false
+	creature.recovery_attempts = 0
+	creature.recovery_cell = Vector2i(-1, -1)
+	creature.velocity = Vector3.ZERO
+	await frames(app, 120)
+	check(Maze.to_cell(creature.global_position) == turn_path[0], "Monster physically clears the corner and enters the next corridor")
+	check(not creature.recovering_from_stuck, "Following the centered turn route does not invoke stuck recovery")
+	if had_catch_callback:
+		creature.caught.connect(catch_callback)
+	app.player.global_position = saved_player_position
+	app.player.active = saved_player_active
+	creature.active = false
 	var off_center: Vector3 = Maze.to_world(start_cell, 0.03) + Vector3(first_direction.x, 0, first_direction.y) * 0.70
 	creature.global_position = off_center
 	await frames(app, 1)
@@ -416,12 +473,20 @@ func _test_corner_navigation(app, creature) -> void:
 	creature.recovery_target = saved_recovery_target
 	creature.recovery_cell = saved_recovery_cell
 	creature.recovery_attempts = saved_recovery_attempts
+	creature.aligned_cell = saved_aligned_cell
 	creature.active = was_active
 	creature.global_position = saved_position
 	creature.target = saved_target
 	creature.state = saved_state
 	creature.path = saved_path
 	creature.recovering_from_stuck = saved_recovery
+	creature.awake_time = saved_awake_time
+	creature.sense_timer = saved_sense_timer
+	creature.path_timer = saved_path_timer
+	creature.stuck_time = saved_stuck_time
+	creature.velocity = saved_velocity
+	app.player.global_position = saved_player_position
+	app.player.active = saved_player_active
 
 func _test_junction_approach(app, creature) -> void:
 	var intersection_cell := Vector2i.ZERO

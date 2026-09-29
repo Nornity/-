@@ -62,6 +62,8 @@ var fuses: int = 0
 var elapsed: float = 0.0
 var endless_floor: int = 0
 var run_seed: int = 0
+var last_random_seed: int = 0
+var map_rng := RandomNumberGenerator.new()
 var new_record: bool = false
 var map_visible: bool = false
 var interaction: Dictionary = {}
@@ -85,6 +87,7 @@ var _pointer_callback
 var _was_locked: bool = false
 
 func _ready() -> void:
+	map_rng.randomize()
 	InputSetup.install()
 	touch_enabled = DisplayServer.is_touchscreen_available()
 	testing = OS.get_cmdline_user_args().has("--smoke-test")
@@ -233,13 +236,22 @@ func _on_command(action: String, value: Variant) -> void:
 				ui.close_modal()
 		"resume": resume_game()
 		"menu": return_to_menu()
-		"restart": start_run(int(config.id), endless_floor, run_seed)
+		"restart": start_run(int(config.id), endless_floor)
 		"retry":
 			if endless_floor > 0:
 				start_run(-1, 1)
 			else:
-				start_run(int(config.id), 0, run_seed)
+				start_run(int(config.id), 0)
 		"next": start_run(mini(3, int(config.id) + 1))
+
+func _fresh_map_seed() -> int:
+	var candidate: int = map_rng.randi_range(1, 2147483646)
+	for attempt in range(3):
+		if candidate != run_seed and candidate != last_random_seed:
+			break
+		candidate = candidate % 2147483646 + 1
+	last_random_seed = candidate
+	return candidate
 
 func start_run(sector_id: int, floor_number: int = 0, map_seed: int = -1) -> void:
 	if sector_id > progress.unlocked and not testing:
@@ -248,7 +260,7 @@ func start_run(sector_id: int, floor_number: int = 0, map_seed: int = -1) -> voi
 	InputSetup.release_movement()
 	config = Levels.endless(maxi(1, floor_number)) if sector_id == -1 else Levels.sector(sector_id)
 	endless_floor = maxi(1, floor_number) if sector_id == -1 else 0
-	run_seed = randi_range(1, 2147483646) if map_seed < 0 else map_seed
+	run_seed = _fresh_map_seed() if map_seed < 0 else map_seed
 	world = World.new()
 	add_child(world)
 	print("SECTOR_BUILD_BEGIN ", config.code, " seed=", run_seed)
