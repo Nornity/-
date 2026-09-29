@@ -374,10 +374,16 @@ func _test_corner_navigation(app, creature) -> void:
 	var first_direction := Vector2i.ZERO
 	var turn_cell := Vector2i.ZERO
 	var found_turn := false
+	var diagonals: Array[Vector2i] = [Vector2i(1, 1), Vector2i(-1, 1), Vector2i(-1, -1), Vector2i(1, -1)]
 	for start in app.world.maze.floor_cells:
-		for goal in app.world.maze.floor_cells:
+		for diagonal in diagonals:
+			var goal: Vector2i = start + diagonal
+			var side_x: Vector2i = start + Vector2i(diagonal.x, 0)
+			var side_z: Vector2i = start + Vector2i(0, diagonal.y)
+			if not app.world.maze.is_open(goal) or (app.world.maze.is_open(side_x) and app.world.maze.is_open(side_z)):
+				continue
 			var candidate: Array[Vector2i] = app.world.maze.find_path(start, goal)
-			if candidate.size() < 3:
+			if candidate.size() < 2:
 				continue
 			var direction: Vector2i = candidate[0] - start
 			for i in range(1, candidate.size()):
@@ -394,10 +400,12 @@ func _test_corner_navigation(app, creature) -> void:
 				break
 		if found_turn:
 			break
-	check(found_turn, "Navigation test finds a route with a right-angle corner")
+	check(found_turn, "Navigation test finds a seeded L-corner with a blocked diagonal shortcut")
 	var saved_position: Vector3 = creature.global_position
 	var saved_target: Vector2i = creature.target
 	var saved_state: String = creature.state
+	var saved_memory: Vector3 = creature.last_known
+	var saved_memory_time: float = creature.memory
 	var saved_path: Array[Vector2i] = creature.path.duplicate()
 	var saved_recovery: bool = creature.recovering_from_stuck
 	var saved_recovery_target: Vector3 = creature.recovery_target
@@ -415,10 +423,17 @@ func _test_corner_navigation(app, creature) -> void:
 	creature.active = false
 	creature.global_position = Maze.to_world(start_cell, 0.03)
 	creature.target = goal_cell
-	creature.state = "patrol"
+	creature.last_known = Maze.to_world(goal_cell, 0.03)
+	creature.memory = 5.0
+	creature.state = "chase"
 	creature.recovering_from_stuck = false
 	creature.aligned_cell = Vector2i(-1, -1)
 	creature.path = route.duplicate()
+	check(
+		not creature._grid_line_clear(Maze.to_world(start_cell, 0.03), Maze.to_world(goal_cell, 0.03)),
+		"Grid traversal rejects a chase line that grazes a blocked inside corner"
+	)
+	check(not creature._can_steer_to_memory(), "Chase follows its maze path instead of steering through a blocked corner")
 	var aimed_cell: Vector2i = Maze.to_cell(creature.navigation_aim())
 	var aimed_offset: Vector2i = aimed_cell - start_cell
 	check(
@@ -431,6 +446,8 @@ func _test_corner_navigation(app, creature) -> void:
 	creature.global_position = entering_turn_cell
 	creature.target = goal_cell
 	creature.path = turn_path
+	creature.aligned_cell = Vector2i(-1, -1)
+	creature.state = "patrol"
 	check(Maze.to_cell(creature.global_position) == turn_cell, "Turn test places the creature off-centre inside the corner cell")
 	var corner_aim: Vector3 = creature.navigation_aim()
 	check(
@@ -444,8 +461,11 @@ func _test_corner_navigation(app, creature) -> void:
 	app.player.active = false
 	creature.global_position = entering_turn_cell
 	creature.target = goal_cell
+	creature.last_known = Maze.to_world(goal_cell, 0.03)
+	creature.memory = 5.0
 	creature.path = turn_path.duplicate()
-	creature.state = "patrol"
+	creature.aligned_cell = Vector2i(-1, -1)
+	creature.state = "chase"
 	creature.active = true
 	creature.awake_time = 10.0
 	creature.sense_timer = 100.0
@@ -455,8 +475,8 @@ func _test_corner_navigation(app, creature) -> void:
 	creature.recovery_attempts = 0
 	creature.recovery_cell = Vector2i(-1, -1)
 	creature.velocity = Vector3.ZERO
-	await frames(app, 120)
-	check(Maze.to_cell(creature.global_position) == turn_path[0], "Monster physically clears the corner and enters the next corridor")
+	await frames(app, 60)
+	check(Maze.to_cell(creature.global_position) == turn_path[0], "Chasing monster physically clears the corner and enters the next corridor")
 	check(not creature.recovering_from_stuck, "Following the centered turn route does not invoke stuck recovery")
 	if had_catch_callback:
 		creature.caught.connect(catch_callback)
@@ -465,6 +485,10 @@ func _test_corner_navigation(app, creature) -> void:
 	creature.active = false
 	var off_center: Vector3 = Maze.to_world(start_cell, 0.03) + Vector3(first_direction.x, 0, first_direction.y) * 0.70
 	creature.global_position = off_center
+	creature.target = goal_cell
+	creature.recovering_from_stuck = false
+	creature.recovery_attempts = 0
+	creature.recovery_cell = Vector2i(-1, -1)
 	await frames(app, 1)
 	creature._begin_stuck_recovery()
 	check(creature.recovering_from_stuck, "Stuck recovery picks a capsule-clear nearby cell centre")
@@ -478,6 +502,8 @@ func _test_corner_navigation(app, creature) -> void:
 	creature.global_position = saved_position
 	creature.target = saved_target
 	creature.state = saved_state
+	creature.last_known = saved_memory
+	creature.memory = saved_memory_time
 	creature.path = saved_path
 	creature.recovering_from_stuck = saved_recovery
 	creature.awake_time = saved_awake_time
@@ -510,7 +536,10 @@ func _test_junction_approach(app, creature) -> void:
 	if not found:
 		return
 	var saved_player_position: Vector3 = app.player.global_position
+	var saved_player_velocity: Vector3 = app.player.velocity
+	var saved_player_active: bool = app.player.active
 	var saved_enemy_position: Vector3 = creature.global_position
+	var saved_enemy_active: bool = creature.active
 	var saved_state: String = creature.state
 	var saved_target: Vector2i = creature.target
 	var saved_memory: Vector3 = creature.last_known
@@ -518,24 +547,36 @@ func _test_junction_approach(app, creature) -> void:
 	var saved_sense_timer: float = creature.sense_timer
 	var saved_path_timer: float = creature.path_timer
 	var saved_awake_time: float = creature.awake_time
+	var saved_stuck_time: float = creature.stuck_time
 	var saved_velocity: Vector3 = creature.velocity
-	var saved_path: Array[Vector2i] = []
-	for step in creature.path:
-		saved_path.append(step)
-	var junction_x: float = float(intersection_cell.x + 1) * Maze.CELL_SIZE
-	var junction_z: float = float(intersection_cell.y + 1) * Maze.CELL_SIZE
-	var junction := Vector3(junction_x, 0.03, junction_z)
+	var saved_recovery: bool = creature.recovering_from_stuck
+	var saved_recovery_target: Vector3 = creature.recovery_target
+	var saved_recovery_cell: Vector2i = creature.recovery_cell
+	var saved_recovery_attempts: int = creature.recovery_attempts
+	var saved_aligned_cell: Vector2i = creature.aligned_cell
+	var saved_path: Array[Vector2i] = creature.path.duplicate()
+	var junction_target: Vector3 = Maze.to_world(intersection_cell, 0.03) + Vector3(0.85, 0.0, 0.85)
 	creature.global_position = Maze.to_world(intersection_cell, 0.03)
-	app.player.global_position = junction
-	creature.last_known = junction
-	creature.target = Maze.to_cell(junction)
+	creature.target = intersection_cell
+	creature.last_known = junction_target
 	creature.state = "chase"
 	creature.memory = 3.6
+	creature.active = true
+	creature.awake_time = 10.0
+	creature.sense_timer = 100.0
 	creature.path_timer = 0.0
+	creature.stuck_time = 0.0
+	creature.recovering_from_stuck = false
+	creature.recovery_attempts = 0
+	creature.recovery_cell = Vector2i(-1, -1)
+	creature.velocity = Vector3.ZERO
 	creature.path.clear()
-	check(creature._can_steer_to_memory(), "A visible four-way target bypasses cell-center steering")
-	check(creature.navigation_aim().is_equal_approx(junction), "Pursuit aims at the player's sub-cell junction position")
-	var distance_before: float = creature.global_position.distance_to(junction)
+	app.player.global_position = junction_target
+	app.player.velocity = Vector3.ZERO
+	app.player.active = false
+	check(creature._can_steer_to_memory(), "A target in the current tile supports responsive sub-cell pursuit")
+	check(creature.navigation_aim().is_equal_approx(junction_target), "Pursuit aims at the remembered position inside its tile")
+	var distance_before: float = creature.global_position.distance_to(junction_target)
 	var catch_callback := Callable(app, "die")
 	var had_catch_callback: bool = creature.caught.is_connected(catch_callback)
 	if had_catch_callback:
@@ -543,13 +584,42 @@ func _test_junction_approach(app, creature) -> void:
 	await frames(app, 60)
 	if had_catch_callback:
 		creature.caught.connect(catch_callback)
-	var distance_after: float = creature.global_position.distance_to(junction)
-	check(distance_after < distance_before - 0.25, "Creature closes smoothly on a player at the junction")
-	check(distance_after < 0.18, "Creature converges instead of orbiting the stationary junction target")
-	var destination_cell_center: Vector3 = Maze.to_world(Maze.to_cell(junction), 0.03)
-	check(creature.global_position.distance_to(destination_cell_center) > 1.0, "Creature reaches the sub-cell target without snapping to its center")
+	var distance_after: float = creature.global_position.distance_to(junction_target)
+	check(distance_after < distance_before - 0.25, "Creature closes smoothly on a stationary target at the junction")
+	check(distance_after < 0.18, "Creature converges instead of orbiting the sub-cell target")
+	var destination_cell_center: Vector3 = Maze.to_world(intersection_cell, 0.03)
+	check(creature.global_position.distance_to(destination_cell_center) > 1.0, "Creature reaches the sub-cell target without snapping to the center")
+	var crossing_target := Vector3(
+		float(intersection_cell.x + 1) * Maze.CELL_SIZE,
+		0.03,
+		float(intersection_cell.y + 1) * Maze.CELL_SIZE
+	)
+	var crossing_cell: Vector2i = Maze.to_cell(crossing_target)
+	var crossing_route: Array[Vector2i] = app.world.maze.find_path(intersection_cell, crossing_cell)
+	check(not crossing_route.is_empty(), "A four-way junction target has a continuous grid route")
+	creature.global_position = Maze.to_world(intersection_cell, 0.03)
+	creature.target = crossing_cell
+	creature.last_known = crossing_target
+	creature.memory = 3.6
+	creature.path = crossing_route.duplicate()
+	creature.aligned_cell = Vector2i(-1, -1)
+	creature.path_timer = 100.0
+	creature.sense_timer = 100.0
+	creature.stuck_time = 0.0
+	creature.recovering_from_stuck = false
+	creature.recovery_attempts = 0
+	creature.recovery_cell = Vector2i(-1, -1)
+	creature.velocity = Vector3.ZERO
+	app.player.global_position = crossing_target
+	check(not creature._can_steer_to_memory(), "A target across a cell boundary cannot trigger direct-steering oscillation")
+	await frames(app, 60)
+	check(Maze.to_cell(creature.global_position) == crossing_route[0], "Chase keeps advancing through a four-way junction without recenter oscillation")
+	check(not creature.recovering_from_stuck, "A clear junction route does not invoke stuck recovery")
 	app.player.global_position = saved_player_position
+	app.player.velocity = saved_player_velocity
+	app.player.active = saved_player_active
 	creature.global_position = saved_enemy_position
+	creature.active = saved_enemy_active
 	creature.state = saved_state
 	creature.target = saved_target
 	creature.last_known = saved_memory
@@ -557,7 +627,13 @@ func _test_junction_approach(app, creature) -> void:
 	creature.sense_timer = saved_sense_timer
 	creature.path_timer = saved_path_timer
 	creature.awake_time = saved_awake_time
+	creature.stuck_time = saved_stuck_time
 	creature.velocity = saved_velocity
+	creature.recovering_from_stuck = saved_recovery
+	creature.recovery_target = saved_recovery_target
+	creature.recovery_cell = saved_recovery_cell
+	creature.recovery_attempts = saved_recovery_attempts
+	creature.aligned_cell = saved_aligned_cell
 	creature.path = saved_path
 
 func _test_touch(app) -> void:

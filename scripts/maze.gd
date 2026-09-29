@@ -49,11 +49,20 @@ func generate(config: Dictionary, map_seed: int) -> void:
 			if not is_open(c) and rng.randf() < 0.27:
 				if _bridges_corridors(c):
 					set_cell(c, 0)
-	# A few maintenance rooms break up the narrow corridors.
-	for room in range(maxi(1, width / 9)):
-		var origin := Vector2i(rng.randi_range(2, width - 4), rng.randi_range(2, width - 4))
-		for y in range(origin.y, origin.y + 3):
-			for x in range(origin.x, origin.x + 3):
+	# Room count and footprints vary by seed, so levels are not just the same
+	# corridor tree with a few walls moved. Every room overlaps the connected
+	# DFS maze and therefore cannot create an isolated pocket.
+	var room_count_min: int = maxi(1, floori(float(width) / 14.0))
+	var room_count_max: int = maxi(room_count_min, floori(float(width) / 7.0))
+	for _room in range(rng.randi_range(room_count_min, room_count_max)):
+		var room_width: int = rng.randi_range(3, 5)
+		var room_height: int = rng.randi_range(3, 5)
+		var origin := Vector2i(
+			rng.randi_range(2, width - room_width - 2),
+			rng.randi_range(2, width - room_height - 2)
+		)
+		for y in range(origin.y, origin.y + room_height):
+			for x in range(origin.x, origin.x + room_width):
 				set_cell(Vector2i(x, y), 0)
 	_rebuild_floor_cells()
 	var distances := distances_from(spawn)

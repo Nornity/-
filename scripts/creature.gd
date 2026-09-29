@@ -218,19 +218,73 @@ func _sense_player() -> void:
 func _can_steer_to_memory() -> bool:
 	if state != "chase" and state != "investigate":
 		return false
+	# Direct steering is only for a sub-cell target in the current tile. Trying a
+	# diagonal to a neighbouring tile at a junction can be clear for a few frames,
+	# then fail a sweep and bounce the follower back to the current cell centre.
+	# Across cell boundaries, always use the stable grid route instead.
+	if Maze.to_cell(global_position) != Maze.to_cell(last_known):
+		return false
 	var eye := Vector3(0, 0.9, 0)
 	return (
 		world.line_of_sight(global_position + eye, last_known + eye)
+		and _grid_line_clear(global_position, last_known)
 		and _capsule_path_clear(last_known)
 	)
+
+func _grid_line_clear(origin: Vector3, destination: Vector3) -> bool:
+	# A clear ray (or capsule cast) can still approve a diagonal shortcut through
+	# the inside of an L-shaped corridor. Traverse every crossed maze cell and
+	# reject a line that touches a blocked tile or cuts a diagonal grid corner.
+	var cell: Vector2i = Maze.to_cell(origin)
+	var goal: Vector2i = Maze.to_cell(destination)
+	if not world.maze.is_open(cell) or not world.maze.is_open(goal):
+		return false
+	if cell == goal:
+		return true
+	var delta_x: float = destination.x - origin.x
+	var delta_z: float = destination.z - origin.z
+	var step_x: int = signi(delta_x)
+	var step_z: int = signi(delta_z)
+	var t_delta_x: float = Maze.CELL_SIZE / absf(delta_x) if step_x != 0 else INF
+	var t_delta_z: float = Maze.CELL_SIZE / absf(delta_z) if step_z != 0 else INF
+	var next_x: float = float(cell.x + (1 if step_x > 0 else 0)) * Maze.CELL_SIZE
+	var next_z: float = float(cell.y + (1 if step_z > 0 else 0)) * Maze.CELL_SIZE
+	var t_max_x: float = (next_x - origin.x) / delta_x if step_x != 0 else INF
+	var t_max_z: float = (next_z - origin.z) / delta_z if step_z != 0 else INF
+	for _step in range(world.maze.width * 2 + 2):
+		if cell == goal:
+			return true
+		if absf(t_max_x - t_max_z) <= 0.00001:
+			var side_x := cell + Vector2i(step_x, 0)
+			var side_z := cell + Vector2i(0, step_z)
+			var diagonal := cell + Vector2i(step_x, step_z)
+			if (
+				not world.maze.is_open(side_x)
+				or not world.maze.is_open(side_z)
+				or not world.maze.is_open(diagonal)
+			):
+				return false
+			cell = diagonal
+			t_max_x += t_delta_x
+			t_max_z += t_delta_z
+		elif t_max_x < t_max_z:
+			cell.x += step_x
+			if not world.maze.is_open(cell):
+				return false
+			t_max_x += t_delta_x
+		else:
+			cell.y += step_z
+			if not world.maze.is_open(cell):
+				return false
+			t_max_z += t_delta_z
+	return cell == goal
 
 func navigation_aim() -> Vector3:
 	if recovering_from_stuck:
 		return recovery_target
 	if _can_steer_to_memory():
-		# Keep a sub-cell chase target at open junctions, but never steer a full
-		# capsule through a corner just because a thin vision ray can see around it.
-		aligned_cell = Vector2i(-1, -1)
+		# Keep sub-cell pursuit responsive inside the current tile, but never steer
+		# a full capsule around a corner just because a thin vision ray can see it.
 		return last_known
 	if not path.is_empty():
 		# Follow one grid waypoint at a time. On entering a cell, centre the body
